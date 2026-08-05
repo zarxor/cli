@@ -11,6 +11,9 @@ cd "$REPO_ROOT" || exit 1
 script_mode=$(git ls-files --stage linux/dev-server/setup.sh | awk '{print $1}')
 assert_eq 100755 "$script_mode" "the public setup script is executable in Git"
 
+shell_eol=$(git check-attr eol -- linux/dev-server/setup.sh | awk '{print $3}')
+assert_eq lf "$shell_eol" "Git preserves LF line endings for public shell scripts"
+
 if [[ -f CNAME ]]; then
   assert_eq scripts.johanbostrom.se "$(<CNAME)" "CNAME declares the public scripts domain"
 else
