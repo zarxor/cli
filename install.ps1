@@ -54,7 +54,7 @@ function Get-ReleaseArchitecture {
 }
 
 try {
-    if (-not $IsWindows) {
+    if ($env:OS -ne 'Windows_NT') {
         throw 'install.ps1 supports Windows only.'
     }
 

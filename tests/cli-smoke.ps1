@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not $IsWindows) {
+if ($env:OS -ne 'Windows_NT') {
     Write-Output 'ok - PowerShell installer smoke test is Windows-only'
     exit 0
 }
@@ -10,6 +10,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $installer = Join-Path $repoRoot 'install.ps1'
 if (-not (Test-Path -LiteralPath $installer)) {
     throw 'not ok - Windows bootstrap installer exists'
+}
+$windowsPowerShell = Get-Command powershell.exe -ErrorAction SilentlyContinue
+if (-not $windowsPowerShell) {
+    throw 'not ok - Windows PowerShell 5.1 is available for compatibility smoke coverage'
 }
 
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("jb-smoke-" + [guid]::NewGuid().ToString('N'))
@@ -50,16 +54,23 @@ try {
 
     $env:JB_RELEASE_BASE_URL = $releaseBaseUrl
     $installDir = Join-Path $testRoot 'user-bin'
-    $output = & pwsh -NoProfile -File $installer -InstallDir $installDir 2>&1 | Out-String
+    $output = & $windowsPowerShell.Source -NoProfile -File $installer -InstallDir $installDir 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) { throw "not ok - Windows installer failed: $output" }
     if (-not (Test-Path -LiteralPath (Join-Path $installDir 'jb.exe'))) { throw 'not ok - Windows installer writes the selected binary path' }
     if ($output -notlike "*$installDir\jb.exe*") { throw 'not ok - Windows installer reports the installed binary path' }
-    Write-Output 'ok - Windows installer selects and installs the matching release asset'
+    Write-Output 'ok - Windows PowerShell 5.1 installer selects and installs the matching release asset'
 
     Set-Content -LiteralPath "$assetPath.sha256" -Value (("0" * 64) + "  $assetName") -Encoding ascii
     $badInstallDir = Join-Path $testRoot 'bad-bin'
-    $badOutput = & pwsh -NoProfile -File $installer -InstallDir $badInstallDir 2>&1 | Out-String
-    if ($LASTEXITCODE -eq 0) { throw 'not ok - Windows installer rejects a checksum mismatch' }
+    $savedErrorPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $badOutput = & $windowsPowerShell.Source -NoProfile -File $installer -InstallDir $badInstallDir 2>&1 | Out-String
+        $badExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $savedErrorPreference
+    }
+    if ($badExitCode -eq 0) { throw 'not ok - Windows installer rejects a checksum mismatch' }
     if (Test-Path -LiteralPath (Join-Path $badInstallDir 'jb.exe')) { throw 'not ok - Windows installer installed an unverified binary' }
     if ($badOutput -notmatch '(?i)checksum') { throw 'not ok - Windows checksum failure explains the rejection' }
     Write-Output 'ok - Windows installer rejects checksum mismatches'

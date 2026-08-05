@@ -48,4 +48,15 @@ assert_contains "$readme" "JB_RELEASE_BASE_URL" "README documents the release-se
 assert_not_contains "$readme" "scripts.johanbostrom.se" "README removes the old public URL"
 assert_not_contains "$readme" "linux/dev-server/setup.sh" "README removes the retired installer path"
 
+for workflow_path in .github/workflows/validate.yml .github/workflows/pages.yml; do
+  workflow=$(<"$workflow_path")
+  workflow_name=${workflow_path##*/}
+  assert_contains "$workflow" "bash -n install.sh tests/cli-smoke.sh tests/*.bash" "$workflow_name validates every published Bash entry point"
+  assert_contains "$workflow" "shellcheck --severity=warning install.sh tests/cli-smoke.sh tests/*.bash" "$workflow_name ShellChecks every published Bash entry point"
+  assert_contains "$workflow" "python" "$workflow_name installs the fixture release server dependency"
+  assert_contains "$workflow" "curl" "$workflow_name installs the bootstrap download dependency"
+  assert_contains "$workflow" "bash tests/run.bash" "$workflow_name runs smoke and publication tests"
+  assert_not_contains "$workflow" "linux/dev-server/setup.sh" "$workflow_name removes the retired installer path"
+done
+
 finish_tests

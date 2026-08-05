@@ -29,6 +29,16 @@ payload_dir=$TEST_TMP/payload
 shim_dir=$TEST_TMP/shims
 mkdir -p "$release_dir" "$payload_dir" "$shim_dir"
 
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import http.server' >/dev/null 2>&1; then
+  fixture_python=python3
+elif command -v python >/dev/null 2>&1 && python -c 'import http.server' >/dev/null 2>&1; then
+  fixture_python=python
+else
+  fail "Python 3 is available for the fixture release server"
+  finish_tests
+  exit 1
+fi
+
 cat >"$payload_dir/jb" <<'EOF'
 #!/usr/bin/env bash
 printf 'jb fixture linux amd64\n'
@@ -52,7 +62,7 @@ chmod +x "$shim_dir/uname"
 
 port_file=$TEST_TMP/port
 server_log=$TEST_TMP/server.log
-python -c 'import functools,http.server,sys; handler=functools.partial(http.server.SimpleHTTPRequestHandler,directory=sys.argv[1]); server=http.server.ThreadingHTTPServer(("127.0.0.1",0),handler); open(sys.argv[2],"w",encoding="ascii").write(str(server.server_port)); server.serve_forever()' "$release_dir" "$port_file" >"$server_log" 2>&1 &
+"$fixture_python" -c 'import functools,http.server,sys; handler=functools.partial(http.server.SimpleHTTPRequestHandler,directory=sys.argv[1]); server=http.server.ThreadingHTTPServer(("127.0.0.1",0),handler); open(sys.argv[2],"w",encoding="ascii").write(str(server.server_port)); server.serve_forever()' "$release_dir" "$port_file" >"$server_log" 2>&1 &
 server_pid=$!
 
 for _ in {1..100}; do
