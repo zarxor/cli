@@ -69,7 +69,7 @@ write_root_file() {
 detect_platform() {
   [[ -r "$OS_RELEASE_FILE" ]] || die "Cannot read $OS_RELEASE_FILE"
 
-  local ID= ID_LIKE= VERSION_CODENAME= UBUNTU_CODENAME= DEBIAN_CODENAME=
+  local ID='' ID_LIKE='' VERSION_CODENAME='' UBUNTU_CODENAME='' DEBIAN_CODENAME=''
   # shellcheck disable=SC1090
   source "$OS_RELEASE_FILE"
 

@@ -6,7 +6,7 @@ REPO_ROOT=$(cd "$TEST_DIR/.." && pwd)
 
 # shellcheck source=tests/test_helper.bash
 source "$TEST_DIR/test_helper.bash"
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 1
 
 script_mode=$(git ls-files --stage linux/dev-server/setup.sh | awk '{print $1}')
 assert_eq 100755 "$script_mode" "the public setup script is executable in Git"
