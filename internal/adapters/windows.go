@@ -17,10 +17,13 @@ import (
 // reuse Linux shell or nvm paths: WSL is a separate platform with its own
 // adapter.
 type WindowsAdapter struct {
-	runner    runner.Runner
-	elevation runner.Elevation
-	config    WindowsConfig
-	converged map[string]struct{}
+	runner                   runner.Runner
+	elevation                runner.Elevation
+	config                   WindowsConfig
+	converged                map[string]struct{}
+	dockerDesktopVersionsSet bool
+	dockerDesktopCurrent     string
+	dockerDesktopCandidate   string
 }
 
 type WindowsConfig struct {
@@ -96,9 +99,19 @@ func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.De
 		}
 	}
 	if source.packageID != "" {
-		result, err := a.runner.Run(ctx, "winget", "show", "--id", source.packageID, "--exact")
-		if err == nil {
-			detection.Candidate = labeledValue(result.Stdout, "Version")
+		if isDockerTool(tool.ID) && detection.Installed {
+			current, candidate := a.dockerDesktopVersions(ctx)
+			if current != "" {
+				detection.Current = current
+			}
+			if candidate != "" {
+				detection.Candidate = candidate
+			}
+		} else {
+			result, err := a.runner.Run(ctx, "winget", "show", "--id", source.packageID, "--exact")
+			if err == nil {
+				detection.Candidate = labeledValue(result.Stdout, "Version")
+			}
 		}
 	} else if detection.Installed {
 		candidate, err := a.userToolCandidate(ctx, tool.ID)
@@ -108,6 +121,21 @@ func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.De
 		detection.Candidate = candidate
 	}
 	return detection, nil
+}
+
+func (a *WindowsAdapter) dockerDesktopVersions(ctx context.Context) (string, string) {
+	if a.dockerDesktopVersionsSet {
+		return a.dockerDesktopCurrent, a.dockerDesktopCandidate
+	}
+	a.dockerDesktopVersionsSet = true
+	packageID := windowsSources[profile.Docker].packageID
+	if result, err := a.runner.Run(ctx, "winget", "list", "--id", packageID, "--exact", "--details"); err == nil {
+		a.dockerDesktopCurrent = labeledValue(result.Stdout, "Version")
+	}
+	if result, err := a.runner.Run(ctx, "winget", "show", "--id", packageID, "--exact"); err == nil {
+		a.dockerDesktopCandidate = labeledValue(result.Stdout, "Version")
+	}
+	return a.dockerDesktopCurrent, a.dockerDesktopCandidate
 }
 
 func (a *WindowsAdapter) userToolCandidate(ctx context.Context, id tools.ToolID) (string, error) {

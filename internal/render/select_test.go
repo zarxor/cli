@@ -50,6 +50,18 @@ func TestNumberedSelectionKeepsDefaultsOnEmptyInput(t *testing.T) {
 	}
 }
 
+func TestNumberedSelectionRejectsClosedInput(t *testing.T) {
+	items := []render.Item{{Tool: tools.Tool{ID: profile.Git}, Selected: true}}
+	for _, input := range []string{"", "1"} {
+		t.Run(input, func(t *testing.T) {
+			selection := render.NewNumberedSelection(strings.NewReader(input), &bytes.Buffer{})
+			if _, err := selection.Select(context.Background(), items); err == nil {
+				t.Fatalf("Select() error = nil for closed input %q", input)
+			}
+		})
+	}
+}
+
 func TestNumberedSelectionRejectsMalformedNonblankInput(t *testing.T) {
 	for _, input := range []string{",", "1,", ",1", "1,,1"} {
 		t.Run(input, func(t *testing.T) {

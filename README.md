@@ -77,6 +77,21 @@ The initial profile name is `development`; the syntax is ready for more built-in
 profiles later. Tools and dependencies shared by multiple profiles are
 deduplicated by stable tool ID before the plan is shown or executed.
 
+Use `--only` to narrow a profile to the tools you want to manage. Dependencies
+needed by a narrowed tool are still added automatically:
+
+```text
+jb tools install --profiles=development --only=bun
+```
+
+This plans Bun together with its required Node.js, npm, nvm, and Git
+dependencies. To start from an explicit tool list, omit `--profiles` (required
+dependencies are still added):
+
+```text
+jb tools install --only=git,bun
+```
+
 ## Update installed tools
 
 ```text
@@ -91,6 +106,22 @@ hidden service.
 
 Use `jb tools update --yes` for non-interactive updates or `jb tools update
 --dry-run` to inspect the plan without changing anything.
+
+Updates without `--profiles` scan the complete supported catalog. Supplying a
+profile limits discovery to that profile, while `--only` narrows the profile
+and retains dependencies:
+
+```text
+jb tools update --profiles=development
+jb tools update --profiles=development --only=bun
+```
+
+When no profile is supplied, `--only` directly limits the live scan to the
+listed tools:
+
+```text
+jb tools update --only=docker
+```
 
 ## Other commands
 

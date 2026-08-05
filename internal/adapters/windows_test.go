@@ -82,6 +82,43 @@ func TestWindowsTreatsMissingDockerComponentAsAbsent(t *testing.T) {
 	}
 }
 
+func TestWindowsAlreadyCurrentDockerReportsDesktopPackageVersion(t *testing.T) {
+	fixture := runner.NewFixture()
+	dockerPath := `C:\Program Files\Docker\Docker\resources\bin\docker.exe`
+	fixture.LookPaths["docker"] = dockerPath
+	fixture.Set(dockerPath, []string{"--version"}, runner.Result{Stdout: "Docker version 28.1.1\n"}, nil)
+	fixture.Set(dockerPath, []string{"buildx", "version"}, runner.Result{Stdout: "github.com/docker/buildx v0.24.0\n"}, nil)
+	fixture.Set(dockerPath, []string{"compose", "version"}, runner.Result{Stdout: "Docker Compose version v2.36.0\n"}, nil)
+	fixture.Set("winget", []string{"show", "--id", "Docker.DockerDesktop", "--exact"}, runner.Result{Stdout: "Version: 4.42.0\n"}, nil)
+	fixture.Set("winget", []string{"list", "--id", "Docker.DockerDesktop", "--exact", "--details"}, runner.Result{Stdout: "Version: 4.42.0\n"}, nil)
+	adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture})
+
+	for _, id := range []profile.ToolID{profile.Docker, profile.DockerBuildx, profile.DockerCompose} {
+		got, err := adapter.Detect(context.Background(), mustTool(t, id))
+		if err != nil {
+			t.Fatalf("Detect(%s): %v", id, err)
+		}
+		if got != (detect.Detection{Installed: true, Current: "4.42.0", Candidate: "4.42.0"}) {
+			t.Fatalf("Detect(%s) = %#v, want installed Docker Desktop package at 4.42.0", id, got)
+		}
+	}
+	listCount, showCount := 0, 0
+	for _, command := range fixture.Commands {
+		if command.Command != "winget" {
+			continue
+		}
+		if len(command.Args) > 0 && command.Args[0] == "list" {
+			listCount++
+		}
+		if len(command.Args) > 0 && command.Args[0] == "show" {
+			showCount++
+		}
+	}
+	if listCount != 1 || showCount != 1 {
+		t.Fatalf("Docker Desktop package lookups = list %d/show %d, want one each", listCount, showCount)
+	}
+}
+
 func TestWindowsPreservesGenuineDockerDetectionFailure(t *testing.T) {
 	fixture := runner.NewFixture()
 	path := `C:\Program Files\Docker\Docker\resources\bin\docker.exe`

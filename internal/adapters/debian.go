@@ -490,7 +490,7 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 	case profile.NVM:
 		return a.installNVM(ctx, "v0.40.3")
 	case profile.Node:
-		return a.runNVM(ctx, "install", "--lts", "--latest-npm")
+		return a.convergeNodeLTS(ctx)
 	case profile.NPM:
 		return a.runNVMExecutable(ctx, "npm", "install", "--global", "npm@latest")
 	case profile.Corepack:
@@ -520,7 +520,7 @@ func (a linuxAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error
 		}
 		return a.updateNVM(ctx, version)
 	case profile.Node:
-		return a.runNVM(ctx, "install", "--lts", "--latest-npm")
+		return a.convergeNodeLTS(ctx)
 	default:
 		return a.installUserTool(ctx, tool)
 	}
@@ -603,6 +603,13 @@ func (a linuxAdapter) runNVM(ctx context.Context, args ...string) error {
 	return err
 }
 
+func (a linuxAdapter) convergeNodeLTS(ctx context.Context) error {
+	if err := a.runNVM(ctx, "install", "--lts", "--latest-npm"); err != nil {
+		return err
+	}
+	return a.runNVM(ctx, "alias", "default", "lts/*")
+}
+
 func (a linuxAdapter) runNVMCommand(ctx context.Context, args ...string) (runner.Result, error) {
 	helper, err := createTemporary(a.config.TempDir, "jb-nvm-command-*", "#!/bin/sh\nset -eu\n. \"$NVM_DIR/nvm.sh\"\nnvm \"$@\"\n")
 	if err != nil {
@@ -622,7 +629,7 @@ func (a linuxAdapter) runNVMExecutable(ctx context.Context, executable string, a
 
 func (a linuxAdapter) runNVMExecutableCommand(ctx context.Context, executable string, args ...string) (runner.Result, error) {
 	nvmExec := filepath.Join(a.config.Home, ".nvm", "nvm-exec")
-	return a.runUserCommand(ctx, []string{"NVM_DIR=" + filepath.Join(a.config.Home, ".nvm")}, nvmExec, append([]string{executable}, args...)...)
+	return a.runUserCommand(ctx, []string{"NVM_DIR=" + filepath.Join(a.config.Home, ".nvm"), "NODE_VERSION=lts/*"}, nvmExec, append([]string{executable}, args...)...)
 }
 
 func (a linuxAdapter) detectNVM(ctx context.Context) (detect.Detection, error) {
@@ -642,7 +649,7 @@ func (a linuxAdapter) detectNVMExecutable(ctx context.Context, executable string
 	if _, err := a.runner.LookPath(ctx, nvmExec); err != nil {
 		return detect.Detection{Installed: false}, nil
 	}
-	result, err := a.runUserCommand(ctx, []string{"NVM_DIR=" + filepath.Join(a.config.Home, ".nvm")}, nvmExec, executable, "--version")
+	result, err := a.runUserCommand(ctx, []string{"NVM_DIR=" + filepath.Join(a.config.Home, ".nvm"), "NODE_VERSION=lts/*"}, nvmExec, executable, "--version")
 	if err != nil {
 		if expectedMissingComponentExecutable(executable, result) {
 			return detect.Detection{Installed: false}, nil

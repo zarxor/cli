@@ -184,7 +184,7 @@ func TestArchBunUsesIntegrityCheckedNPMProviderWithoutSystemMutation(t *testing.
 		t.Fatal(err)
 	}
 
-	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), filepath.Join(home, ".nvm", "nvm-exec"), "npm", "install", "--global", "bun@latest")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", filepath.Join(home, ".nvm", "nvm-exec"), "npm", "install", "--global", "bun@latest")
 	for _, command := range fixture.Commands {
 		if command.Command == "sudo" || command.Command == "curl" {
 			t.Fatalf("Bun package install used an elevated or remote-script command: %#v", command)
@@ -201,7 +201,7 @@ func TestDebianBunUsesIntegrityCheckedNPMProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), filepath.Join(home, ".nvm", "nvm-exec"), "npm", "install", "--global", "bun@latest")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", filepath.Join(home, ".nvm", "nvm-exec"), "npm", "install", "--global", "bun@latest")
 }
 
 func TestLinuxUserToolInstallsAvoidUnverifiedRemoteScripts(t *testing.T) {
@@ -216,10 +216,10 @@ func TestLinuxUserToolInstallsAvoidUnverifiedRemoteScripts(t *testing.T) {
 	}
 
 	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
-	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), nvmExec, "npm", "install", "--global", "@openai/codex@latest")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", "@openai/codex@latest")
 	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "git", "clone", "--branch", "v0.40.3", "--depth", "1", "https://github.com/nvm-sh/nvm.git", filepath.Join(home, ".nvm"))
 	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "git", "-C", filepath.Join(home, ".nvm"), "checkout", "--detach", "d025499c7f5466d0dc0a324dc98eab72cce8377d")
-	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), nvmExec, "npm", "install", "--global", "bun@latest")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", "bun@latest")
 	for _, command := range fixture.Commands {
 		if command.Command == "curl" {
 			t.Fatalf("user tool install downloaded an executable script: %#v", command)
@@ -409,7 +409,7 @@ func TestLinuxTreatsMissingNVMManagedComponentAsAbsent(t *testing.T) {
 	home := t.TempDir()
 	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
 	fixture.LookPaths[nvmExec] = nvmExec
-	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "pnpm", "--version"}
+	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "pnpm", "--version"}
 	fixture.Set("env", args, runner.Result{Stderr: nvmExec + ": line 20: exec: pnpm: not found\n", ExitCode: 127}, errors.New("exit status 127"))
 	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
 
@@ -441,7 +441,7 @@ func TestLinuxBrokenPresentExecutablesRemainDetectionErrors(t *testing.T) {
 			nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
 			fixture := runner.NewFixture()
 			fixture.LookPaths[nvmExec] = nvmExec
-			fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "npm", "--version"}, test.result, test.wantErr)
+			fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "--version"}, test.result, test.wantErr)
 			adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
 
 			_, err := adapter.Detect(context.Background(), mustTool(t, profile.NPM))
@@ -466,12 +466,12 @@ func TestLinuxDetectsCandidatesForInstalledUserTools(t *testing.T) {
 	}
 	for id, packageName := range packages {
 		executable, _ := nvmExecutable(id)
-		currentArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, executable, "--version"}
+		currentArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, executable, "--version"}
 		fixture.Set("env", currentArgs, runner.Result{Stdout: "1.0.0\n"}, nil)
-		candidateArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "npm", "view", packageName, "version"}
+		candidateArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "view", packageName, "version"}
 		fixture.Set("env", candidateArgs, runner.Result{Stdout: "2.0.0\n"}, nil)
 	}
-	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "node", "--version"}, runner.Result{Stdout: "v22.0.0\n"}, nil)
+	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "node", "--version"}, runner.Result{Stdout: "v22.0.0\n"}, nil)
 
 	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
 	cases := []struct {
@@ -513,7 +513,7 @@ func TestLinuxCandidateLookupFailuresPreserveSuccessfulDetection(t *testing.T) {
 		{
 			name: "npm registry outage", id: profile.NPM, executable: "npm", current: "10.8.0",
 			setCandidate: func(fixture *runner.Fixture, nvmExec string) {
-				fixture.Set("env", []string{"HOME=" + filepath.Dir(filepath.Dir(nvmExec)), "NVM_DIR=" + filepath.Dir(nvmExec), nvmExec, "npm", "view", "npm", "version"}, runner.Result{}, errors.New("registry unavailable"))
+				fixture.Set("env", []string{"HOME=" + filepath.Dir(filepath.Dir(nvmExec)), "NVM_DIR=" + filepath.Dir(nvmExec), "NODE_VERSION=lts/*", nvmExec, "npm", "view", "npm", "version"}, runner.Result{}, errors.New("registry unavailable"))
 			},
 		},
 	}
@@ -524,7 +524,7 @@ func TestLinuxCandidateLookupFailuresPreserveSuccessfulDetection(t *testing.T) {
 			nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
 			fixture := runner.NewFixture()
 			fixture.LookPaths[nvmExec] = nvmExec
-			fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, test.executable, "--version"}, runner.Result{Stdout: test.current + "\n"}, nil)
+			fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, test.executable, "--version"}, runner.Result{Stdout: test.current + "\n"}, nil)
 			test.setCandidate(fixture, nvmExec)
 			adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
 
@@ -666,15 +666,80 @@ func TestNodeInstallUsesArgvSafeNVMHelperInsteadOfNVMExecFunctionCall(t *testing
 	}
 }
 
+func TestNVMManagedCommandsForceLTSDespiteProjectNVMRC(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, ".nvmrc"), []byte("v18.20.0\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+
+	if err := adapter.Install(context.Background(), mustTool(t, profile.Codex)); err != nil {
+		t.Fatal(err)
+	}
+
+	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+	for _, command := range fixture.Commands {
+		if command.Command != "env" || !slicesContain(command.Args, nvmExec) {
+			continue
+		}
+		if !slicesContain(command.Args, "NODE_VERSION=lts/*") {
+			t.Fatalf("NVM-managed command = %#v, want explicit LTS NODE_VERSION despite project %s", command, project)
+		}
+		return
+	}
+	t.Fatalf("commands = %#v, want NVM-managed command", fixture.Commands)
+}
+
+func TestNodeConvergenceUpdatesPersistentNVMDefault(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		run  func(Adapter) error
+	}{{
+		name: "install",
+		run: func(adapter Adapter) error {
+			return adapter.Install(context.Background(), mustTool(t, profile.Node))
+		},
+	}, {
+		name: "update",
+		run: func(adapter Adapter) error {
+			return adapter.Update(context.Background(), mustTool(t, profile.Node))
+		},
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := runner.NewFixture()
+			home := t.TempDir()
+			if test.name == "update" {
+				fixture.Set("git", []string{"ls-remote", "--tags", "--refs", "https://github.com/nvm-sh/nvm.git", "v*"}, runner.Result{Stdout: "aaa\trefs/tags/v0.40.3\n"}, nil)
+			}
+			adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+
+			if err := test.run(adapter); err != nil {
+				t.Fatal(err)
+			}
+			aliasCount := 0
+			for _, command := range fixture.Commands {
+				if slicesContain(command.Args, "alias") && slicesContain(command.Args, "default") && slicesContain(command.Args, "lts/*") {
+					aliasCount++
+				}
+			}
+			if aliasCount != 1 {
+				t.Fatalf("NVM default alias commands = %d; commands = %#v, want one persistent LTS alias", aliasCount, fixture.Commands)
+			}
+		})
+	}
+}
+
 func TestCleanProcessDetectsCodexAndNodeToolsFromConfiguredHome(t *testing.T) {
 	fixture := runner.NewFixture()
 	home := t.TempDir()
 	temp := t.TempDir()
 	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
 	fixture.LookPaths[nvmExec] = nvmExec
-	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "codex", "--version"}, runner.Result{Stdout: "codex-cli 1.2.3\n"}, nil)
-	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "node", "--version"}, runner.Result{Stdout: "v24.1.0\n"}, nil)
-	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "npm", "view", "@openai/codex", "version"}, runner.Result{Stdout: "1.2.4\n"}, nil)
+	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "codex", "--version"}, runner.Result{Stdout: "codex-cli 1.2.3\n"}, nil)
+	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "node", "--version"}, runner.Result{Stdout: "v24.1.0\n"}, nil)
+	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "view", "@openai/codex", "version"}, runner.Result{Stdout: "1.2.4\n"}, nil)
 	fixture.Set("curl", []string{"-fsSL", "https://nodejs.org/dist/index.json"}, runner.Result{Stdout: `[{"version":"v24.1.0","lts":"Krypton"}]`}, nil)
 	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: temp})
 
@@ -698,7 +763,7 @@ func TestUserPackageFailurePreservesExitStatus(t *testing.T) {
 	wantErr := &fixtureExitError{status: 23}
 	home := t.TempDir()
 	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
-	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "npm", "install", "--global", "@openai/codex@latest"}
+	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", "@openai/codex@latest"}
 	fixture.Set("env", args, runner.Result{ExitCode: 23}, wantErr)
 	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: temp})
 

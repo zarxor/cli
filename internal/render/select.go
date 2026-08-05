@@ -63,7 +63,10 @@ func (s *NumberedSelection) Select(ctx context.Context, items []Item) ([]tools.T
 	}
 
 	line, err := bufio.NewReader(s.reader).ReadString('\n')
-	if err != nil && err != io.EOF {
+	if err != nil {
+		if err == io.EOF {
+			return nil, fmt.Errorf("interactive selection input closed: %w", err)
+		}
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {

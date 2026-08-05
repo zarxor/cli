@@ -15,6 +15,7 @@ import (
 	"github.com/zarxor/scripts/internal/platform"
 	"github.com/zarxor/scripts/internal/profile"
 	"github.com/zarxor/scripts/internal/render"
+	"github.com/zarxor/scripts/internal/runner"
 	"github.com/zarxor/scripts/internal/tools"
 )
 
@@ -246,6 +247,36 @@ func TestUpdateSkipsToolAlreadyAtCandidateVersion(t *testing.T) {
 	}
 	if len(summary.Results) != 1 || summary.Results[0].Status != "up-to-date" {
 		t.Fatalf("results = %#v, want up-to-date", summary.Results)
+	}
+}
+
+func TestUpdateSkipsAlreadyCurrentDockerDesktopPackage(t *testing.T) {
+	fixture := runner.NewFixture()
+	dockerPath := `C:\Program Files\Docker\Docker\resources\bin\docker.exe`
+	fixture.LookPaths["docker"] = dockerPath
+	fixture.Set(dockerPath, []string{"--version"}, runner.Result{Stdout: "Docker version 28.1.1\n"}, nil)
+	fixture.Set("winget", []string{"list", "--id", "Docker.DockerDesktop", "--exact", "--details"}, runner.Result{Stdout: "Version: 4.42.0\n"}, nil)
+	fixture.Set("winget", []string{"show", "--id", "Docker.DockerDesktop", "--exact"}, runner.Result{Stdout: "Version: 4.42.0\n"}, nil)
+	adapter := adapters.NewWindowsAdapter(fixture, fixture)
+	detection, err := adapter.Detect(context.Background(), mustTool(t, profile.Docker))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	summary := install.Run(context.Background(), install.Update, []install.ToolStatus{{
+		Tool:             mustTool(t, profile.Docker),
+		Installed:        detection.Installed,
+		CurrentVersion:   detection.Current,
+		CandidateVersion: detection.Candidate,
+	}}, fixtureAdapters(adapter), install.Options{Yes: true, Writer: &bytes.Buffer{}})
+
+	if summary.Failed {
+		t.Fatalf("Run() summary = %#v, want already-current Docker Desktop package", summary)
+	}
+	for _, command := range fixture.Commands {
+		if command.Command == "winget" && len(command.Args) > 0 && command.Args[0] == "upgrade" {
+			t.Fatalf("already-current Docker Desktop triggered WinGet upgrade: %#v", fixture.Commands)
+		}
 	}
 }
 
