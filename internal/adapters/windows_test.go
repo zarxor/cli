@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"os"
 	"reflect"
 	"testing"
 
@@ -80,6 +81,81 @@ func TestWindowsUpdatesInstalledToolFromSameWinGetSource(t *testing.T) {
 	want := []string{"upgrade", "--id", "Git.Git", "--exact", "--accept-package-agreements", "--accept-source-agreements"}
 	if got := elevation.commands[0]; got.Command != "winget" || !reflect.DeepEqual(got.Args, want) {
 		t.Fatalf("WinGet command = %#v, want winget %#v", got, want)
+	}
+}
+
+func TestWindowsDefaultElevationUsesFileHelperWithSeparateArguments(t *testing.T) {
+	fixture := runner.NewFixture()
+	elevation := windowsElevation{runner: fixture}
+	wingetArgs := []string{"install", "--id", "Git.Git", "--exact"}
+
+	if _, err := elevation.RunElevated(context.Background(), "winget", wingetArgs...); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture.Commands) != 1 {
+		t.Fatalf("commands = %#v, want one PowerShell invocation", fixture.Commands)
+	}
+	got := fixture.Commands[0]
+	wantPrefix := []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"}
+	if got.Command != "powershell.exe" || len(got.Args) < len(wantPrefix)+2 || !reflect.DeepEqual(got.Args[:len(wantPrefix)], wantPrefix) {
+		t.Fatalf("default elevation = %#v, want PowerShell -File helper", got)
+	}
+	helper := got.Args[len(wantPrefix)]
+	wantPassedArgs := append([]string{"winget"}, wingetArgs...)
+	if !reflect.DeepEqual(got.Args[len(wantPrefix)+1:], wantPassedArgs) {
+		t.Fatalf("PowerShell arguments = %#v, want %#v", got.Args[len(wantPrefix)+1:], wantPassedArgs)
+	}
+	for _, arg := range got.Args {
+		if arg == "-Command" {
+			t.Fatalf("default elevation used -Command instead of -File: %#v", got)
+		}
+	}
+	if _, err := os.Stat(helper); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("elevation helper cleanup error = %v", err)
+	}
+}
+
+func TestWindowsNodeInstallAndUpdateUseElevatedNVMSequence(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		prepare func(*runner.Fixture)
+		run     func(Adapter) error
+	}{
+		{
+			name: "install",
+			run: func(adapter Adapter) error {
+				return adapter.Install(context.Background(), mustTool(t, profile.Node))
+			},
+		},
+		{
+			name: "update",
+			prepare: func(fixture *runner.Fixture) {
+				fixture.LookPaths["node"] = "C:\\Program Files\\nodejs\\node.exe"
+				fixture.Set("node", []string{"--version"}, runner.Result{Stdout: "v24.0.0\n"}, nil)
+			},
+			run: func(adapter Adapter) error {
+				return adapter.Update(context.Background(), mustTool(t, profile.Node))
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := runner.NewFixture()
+			if test.prepare != nil {
+				test.prepare(fixture)
+			}
+			elevation := &windowsFixtureElevation{fixture: fixture}
+
+			if err := test.run(NewWindowsAdapter(fixture, elevation)); err != nil {
+				t.Fatal(err)
+			}
+			want := []runner.Command{
+				{Command: "nvm", Args: []string{"install", "lts"}},
+				{Command: "nvm", Args: []string{"use", "lts"}},
+			}
+			if !reflect.DeepEqual(elevation.commands, want) {
+				t.Fatalf("elevated commands = %#v, want %#v", elevation.commands, want)
+			}
+		})
 	}
 }
 

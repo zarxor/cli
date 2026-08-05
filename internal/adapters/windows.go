@@ -131,7 +131,7 @@ func (a *WindowsAdapter) winGet(ctx context.Context, action string, source windo
 func (a *WindowsAdapter) installUserTool(ctx context.Context, tool tools.Tool, source windowsToolSource) error {
 	switch tool.ID {
 	case profile.Node:
-		return a.run(ctx, "nvm", "install", "lts")
+		return a.runNVM(ctx)
 	case profile.NPM:
 		return a.run(ctx, "npm", "install", "--global", "npm@latest")
 	case profile.Corepack:
@@ -157,7 +157,7 @@ func (a *WindowsAdapter) updateUserTool(ctx context.Context, tool tools.Tool, so
 	case profile.Bun:
 		return a.run(ctx, "bun", "upgrade", "--stable")
 	case profile.Node:
-		return a.run(ctx, "nvm", "install", "lts")
+		return a.runNVM(ctx)
 	default:
 		return a.installUserTool(ctx, tool, source)
 	}
@@ -190,18 +190,40 @@ func (a *WindowsAdapter) run(ctx context.Context, command string, args ...string
 	return err
 }
 
+func (a *WindowsAdapter) runNVM(ctx context.Context) error {
+	for _, args := range [][]string{{"install", "lts"}, {"use", "lts"}} {
+		if _, err := a.elevation.RunElevated(ctx, "nvm", args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (a *WindowsAdapter) unsupported(tool tools.Tool) error {
 	return fmt.Errorf("Windows adapter does not support an installation path for %q", tool.ID)
 }
 
-// windowsElevation requests an elevated native process using a static
-// PowerShell command. The target command and each argument remain separate
-// PowerShell arguments, avoiding an interpolated command line.
+// windowsElevation requests an elevated native process with a static
+// PowerShell helper. The target command and every argument remain separate
+// -File arguments, avoiding an interpolated command line.
 type windowsElevation struct{ runner runner.Runner }
 
 func (e windowsElevation) RunElevated(ctx context.Context, command string, args ...string) (runner.Result, error) {
-	const runAs = "$process = Start-Process -FilePath $args[0] -ArgumentList $args[1..($args.Length - 1)] -Verb RunAs -Wait -PassThru; exit $process.ExitCode"
-	return e.runner.Run(ctx, "powershell.exe", append([]string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", runAs, "--", command}, args...)...)
+	helper, err := os.CreateTemp("", "jb-windows-elevate-*.ps1")
+	if err != nil {
+		return runner.Result{}, err
+	}
+	path := helper.Name()
+	defer os.Remove(path)
+	const runAs = "param(\n\t[Parameter(Mandatory=$true, Position=0)][string]$FilePath,\n\t[Parameter(ValueFromRemainingArguments=$true)][string[]]$ArgumentList\n)\n$process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -Verb RunAs -Wait -PassThru\nexit $process.ExitCode\n"
+	if _, err := helper.WriteString(runAs); err != nil {
+		_ = helper.Close()
+		return runner.Result{}, err
+	}
+	if err := helper.Close(); err != nil {
+		return runner.Result{}, err
+	}
+	return e.runner.Run(ctx, "powershell.exe", append([]string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path, command}, args...)...)
 }
 
 var _ Adapter = (*WindowsAdapter)(nil)
