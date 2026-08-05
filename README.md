@@ -127,9 +127,11 @@ deferred; builds and verification run locally without triggering GitHub Actions.
 ### Prepare a local release
 
 The local build scripts create the published release matrix outside the
-repository by default, in the system temporary directory. Both scripts use the
-verified Go executable at `.tools/go1.26.5/go/bin/go.exe`, compile with
-`-trimpath`, and inject the requested version (or `dev` when omitted):
+repository by default, in the system temporary directory. The PowerShell script
+uses the verified Go executable at `.tools/go1.26.5/go/bin/go.exe`; the Bash
+script discovers the native `go` executable (or accepts `--go`/`JB_GO_EXE`).
+Both compile with `-trimpath` and inject the requested version (or `dev` when
+omitted):
 
 ```powershell
 pwsh -NoProfile -File scripts/build-local.ps1 -Version v1.2.3

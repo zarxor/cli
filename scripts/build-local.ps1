@@ -37,8 +37,18 @@ function New-DeterministicTarGz([string]$BinaryPath, [string]$AssetPath) {
     $item.LastWriteTimeUtc = [datetime]::new(1980, 1, 1, 0, 0, 0, [System.DateTimeKind]::Utc)
     $tarPath = [System.IO.Path]::GetTempFileName()
     try {
-        & tar.exe -cf $tarPath -C (Split-Path -Parent $BinaryPath) jb
+        & tar.exe --format ustar -cf $tarPath -C (Split-Path -Parent $BinaryPath) jb
         if ($LASTEXITCODE -ne 0) { throw "tar failed while creating $AssetPath" }
+        $tarBytes = [System.IO.File]::ReadAllBytes($tarPath)
+        if ($tarBytes.Length -lt 512) { throw "tar output is too short: $tarPath" }
+        [System.Text.Encoding]::ASCII.GetBytes("0000755`0").CopyTo($tarBytes, 100)
+        for ($index = 148; $index -lt 156; $index++) { $tarBytes[$index] = 0x20 }
+        $checksum = 0
+        for ($index = 0; $index -lt 512; $index++) { $checksum += $tarBytes[$index] }
+        [System.Text.Encoding]::ASCII.GetBytes(([Convert]::ToString($checksum, 8).PadLeft(6, '0'))).CopyTo($tarBytes, 148)
+        $tarBytes[154] = 0
+        $tarBytes[155] = 0x20
+        [System.IO.File]::WriteAllBytes($tarPath, $tarBytes)
         $input = [System.IO.File]::OpenRead($tarPath)
         $output = [System.IO.File]::Create($AssetPath)
         try {
@@ -98,7 +108,12 @@ try {
             $env:GOOS = $target.OS
             $env:GOARCH = $target.Arch
             $env:CGO_ENABLED = '0'
-            & $GoExe build -trimpath -buildvcs=false "-ldflags=-s -w -X github.com/zarxor/scripts/internal/version.Version=$Version" -o $binaryPath ./cmd/jb
+            Push-Location -LiteralPath $repoRoot
+            try {
+                & $GoExe build -trimpath -buildvcs=false "-ldflags=-s -w -X github.com/zarxor/scripts/internal/version.Version=$Version" -o $binaryPath ./cmd/jb
+            } finally {
+                Pop-Location
+            }
             if ($LASTEXITCODE -ne 0) { throw "Go build failed for $($target.OS)/$($target.Arch)." }
         } finally {
             $env:GOOS = $oldGoos

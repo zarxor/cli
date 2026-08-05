@@ -26,12 +26,17 @@ case $(uname -m) in
 esac
 
 check_target() {
-  local os=$1 arch=$2 asset=$3 executable=$4 asset_path checksum members extract_root output
+  local os=$1 arch=$2 asset=$3 executable=$4 asset_path checksum members extract_root output checksum_record expected_record computed_hash line_count
   asset_path="$artifact_dir/$asset"
   [[ -f "$asset_path" ]] || { printf 'Missing release asset: %s\n' "$asset_path" >&2; return 1; }
   checksum="$asset_path.sha256"
   [[ -f "$checksum" ]] || { printf 'Missing checksum: %s\n' "$checksum" >&2; return 1; }
-  (cd "$artifact_dir" && sha256sum --strict --check "$(basename "$checksum")")
+  line_count=$(awk 'END { print NR }' "$checksum")
+  [[ $line_count -eq 1 ]] || { printf 'Invalid checksum record count in %s\n' "$checksum" >&2; return 1; }
+  checksum_record=$(<"$checksum")
+  computed_hash=$(sha256sum "$asset_path" | awk '{print $1}')
+  expected_record="$computed_hash  $asset"
+  [[ $checksum_record == "$expected_record" ]] || { printf 'Checksum does not match expected asset: %s\n' "$checksum" >&2; return 1; }
   if [[ $os == linux ]]; then
     members=$(tar -tzf "$asset_path")
   else
@@ -40,14 +45,16 @@ check_target() {
   [[ $members == "$executable" ]] || { printf 'Unexpected archive members in %s: %s\n' "$asset" "$members" >&2; return 1; }
 
   if [[ $os == "$host_os" && $arch == "$host_arch" ]]; then
-    extract_root=$(mktemp -d "${TMPDIR:-/tmp}/jb-check.XXXXXXXX")
-    if [[ $os == linux ]]; then
-      tar -xzf "$asset_path" -C "$extract_root"
-    else
-      unzip -q "$asset_path" -d "$extract_root"
-    fi
-    output=$("$extract_root/$executable" version)
-    rm -rf "$extract_root"
+    output=$(
+      extract_root=$(mktemp -d "${TMPDIR:-/tmp}/jb-check.XXXXXXXX")
+      trap 'rm -rf "$extract_root"' EXIT
+      if [[ $os == linux ]]; then
+        tar -xzf "$asset_path" -C "$extract_root"
+      else
+        unzip -q "$asset_path" -d "$extract_root"
+      fi
+      "$extract_root/$executable" version
+    )
     [[ $output == "Johan Bostrom CLI $version" || $output == "Johan Bostrom CLI $version\\n" ]] || { printf 'Unexpected version output from %s: %s\n' "$asset" "$output" >&2; return 1; }
   fi
   printf 'ok - %s\n' "$asset"

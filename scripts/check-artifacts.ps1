@@ -20,6 +20,12 @@ function Get-TarMembers([string]$AssetPath) {
     return $members
 }
 
+function Get-TarListing([string]$AssetPath) {
+    $listing = @(& tar.exe -tvzf $AssetPath)
+    if ($LASTEXITCODE -ne 0) { throw "tar failed while inspecting $AssetPath" }
+    return $listing
+}
+
 function Get-ZipMembers([string]$AssetPath) {
     $zip = [System.IO.Compression.ZipFile]::OpenRead($AssetPath)
     try {
@@ -64,6 +70,12 @@ foreach ($target in @(
     $members = if ($target.OS -eq 'linux') { Get-TarMembers $assetPath } else { Get-ZipMembers $assetPath }
     if (@($members).Count -ne 1 -or @($members)[0] -ne $target.Executable) {
         throw "Unexpected archive members in $($target.Asset): $($members -join ', ')"
+    }
+    if ($target.OS -eq 'linux') {
+        $listing = Get-TarListing $assetPath
+        if (@($listing).Count -ne 1 -or @($listing)[0] -notmatch '^-rwxr-xr-x\s+') {
+            throw "Linux executable is not mode 0755 in $($target.Asset): $($listing -join ', ')"
+        }
     }
     Test-Checksum $assetPath $target.Asset
 

@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 version=dev
 output_dir="${TMPDIR:-/tmp}/jb-release"
-go_exe="$repo_root/.tools/go1.26.5/go/bin/go.exe"
+go_exe=${JB_GO_EXE:-}
 
 usage() {
   printf 'Usage: %s [--version VERSION] [--output-dir DIRECTORY] [--go GO_EXECUTABLE]\n' "$0"
@@ -20,7 +20,20 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -x "$go_exe" ]] || { printf 'Verified Go executable not found: %s\n' "$go_exe" >&2; exit 1; }
+if [[ -z "$go_exe" ]]; then
+  case $(uname -s) in
+    MINGW*|MSYS*|CYGWIN*)
+      bundled_go="$repo_root/.tools/go1.26.5/go/bin/go.exe"
+      if [[ -x "$bundled_go" ]]; then
+        go_exe=$bundled_go
+      else
+        go_exe=$(command -v go.exe || true)
+      fi
+      ;;
+    *) go_exe=$(command -v go || true) ;;
+  esac
+fi
+[[ -n "$go_exe" && -x "$go_exe" ]] || { printf 'Go executable not found; use --go or JB_GO_EXE.\n' >&2; exit 1; }
 mkdir -p "$output_dir"
 staging_root=$(mktemp -d "${TMPDIR:-/tmp}/jb-build.XXXXXXXX")
 trap 'rm -rf "$staging_root"' EXIT
