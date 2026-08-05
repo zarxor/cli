@@ -31,4 +31,7 @@ func TestExecuteHelpListsToolsAndVersion(t *testing.T) {
 	if !strings.Contains(output.String(), "version") {
 		t.Fatal(output.String())
 	}
+	if !strings.Contains(output.String(), "completion") {
+		t.Fatal(output.String())
+	}
 }

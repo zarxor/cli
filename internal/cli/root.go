@@ -15,23 +15,24 @@ func Execute(ctx context.Context, args []string) error {
 
 // ExecuteWithIO runs the CLI with injectable output streams.
 func ExecuteWithIO(ctx context.Context, args []string, out, errOut io.Writer) error {
-	root := newRootCommand()
+	root := newRootCommand(newLiveToolsService())
 	root.SetArgs(args)
 	root.SetOut(out)
 	root.SetErr(errOut)
 	return root.ExecuteContext(ctx)
 }
 
-func newRootCommand() *cobra.Command {
+func newRootCommand(services ...ToolsService) *cobra.Command {
+	service := ToolsService(newLiveToolsService())
+	if len(services) > 0 {
+		service = services[0]
+	}
 	root := &cobra.Command{
 		Use:   "jb",
 		Short: "Johan Bostrom CLI",
 	}
 	root.AddCommand(
-		&cobra.Command{
-			Use:   "tools",
-			Short: "Manage tools",
-		},
+		newToolsCommand(service),
 		newVersionCommand(),
 	)
 	return root
