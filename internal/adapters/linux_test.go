@@ -227,9 +227,23 @@ func TestLinuxUserToolInstallsAvoidUnverifiedRemoteScripts(t *testing.T) {
 	}
 }
 
-func TestSudoInvocationRunsUserOperationsAsInvokingUserAndPreservesProfileOwnership(t *testing.T) {
+func TestSudoInvocationDelegatesCompleteProfileMutationToInvokingUser(t *testing.T) {
 	fixture := runner.NewFixture()
 	home := t.TempDir()
+	profilePath := filepath.Join(home, ".bashrc")
+	original := "export KEEP=1\n"
+	if err := os.WriteFile(profilePath, []byte(original), 0640); err != nil {
+		t.Fatal(err)
+	}
+	beforeInfo, err := os.Stat(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userTemporary := filepath.Join(home, ".jb-profile-user")
+	userPrefix := []string{"-H", "-u", "johan", "env", "HOME=" + home}
+	fixture.Set("sudo", append(append([]string{}, userPrefix...), "stat", "-c", "%a", "--", profilePath), runner.Result{Stdout: "640\n"}, nil)
+	fixture.Set("sudo", append(append([]string{}, userPrefix...), "cat", "--", profilePath), runner.Result{Stdout: original}, nil)
+	fixture.Set("sudo", append(append([]string{}, userPrefix...), "mktemp", filepath.Join(home, ".jb-profile-XXXXXX")), runner.Result{Stdout: userTemporary + "\n"}, nil)
 	config := LinuxConfig{
 		Root: true, Home: home, TempDir: t.TempDir(),
 		InvokingUser: "johan", InvokingUID: 1000, InvokingGID: 1000,
@@ -241,7 +255,27 @@ func TestSudoInvocationRunsUserOperationsAsInvokingUserAndPreservesProfileOwners
 	}
 
 	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "git", "clone", "--branch", "v0.40.3", "--depth", "1", "https://github.com/nvm-sh/nvm.git", filepath.Join(home, ".nvm"))
-	assertHasCommand(t, fixture.Commands, "chown", "1000:1000", filepath.Join(home, ".bashrc"))
+	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "mkdir", "-p", home)
+	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "stat", "-c", "%a", "--", profilePath)
+	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "cat", "--", profilePath)
+	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "mktemp", filepath.Join(home, ".jb-profile-XXXXXX"))
+	assertHasCommandWithSuffix(t, fixture.Commands, "sudo", append(userPrefix, "install", "-m", "640", "--"), userTemporary)
+	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "mv", "-f", "--", userTemporary, profilePath)
+	for _, command := range fixture.Commands {
+		if command.Command == "chown" {
+			t.Fatalf("profile ownership was repaired after a root mutation: %#v", command)
+		}
+	}
+	got, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != original {
+		t.Fatalf("root process mutated profile directly: got %q, want untouched %q", got, original)
+	}
+	if info, err := os.Stat(profilePath); err != nil || info.Mode().Perm() != beforeInfo.Mode().Perm() {
+		t.Fatalf("root process changed profile mode: info=%v err=%v", info, err)
+	}
 }
 
 func TestLinuxProfileBlocksAreIdempotent(t *testing.T) {
@@ -345,6 +379,34 @@ func TestLinuxTreatsMissingNVMManagedComponentAsAbsent(t *testing.T) {
 	}
 }
 
+func TestLinuxBrokenPresentExecutablesRemainDetectionErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  runner.Result
+		wantErr error
+	}{
+		{name: "dynamic loader failure", result: runner.Result{Stderr: "npm: error while loading shared libraries: libnode.so: cannot open shared object file: No such file or directory\n", ExitCode: 127}, wantErr: errors.New("loader failed")},
+		{name: "permission failure", result: runner.Result{Stderr: "npm: Permission denied\n", ExitCode: 127}, wantErr: errors.New("permission denied")},
+		{name: "arbitrary missing file", result: runner.Result{Stderr: "npm: config: No such file or directory\n", ExitCode: 1}, wantErr: errors.New("config missing")},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			home := t.TempDir()
+			nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+			fixture := runner.NewFixture()
+			fixture.LookPaths[nvmExec] = nvmExec
+			fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "npm", "--version"}, test.result, test.wantErr)
+			adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+
+			_, err := adapter.Detect(context.Background(), mustTool(t, profile.NPM))
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("Detect() error = %v, want broken-present error %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestLinuxDetectsCandidatesForInstalledUserTools(t *testing.T) {
 	home := t.TempDir()
 	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
@@ -384,6 +446,52 @@ func TestLinuxDetectsCandidatesForInstalledUserTools(t *testing.T) {
 			}
 			if !got.Installed || got.Candidate != test.want {
 				t.Fatalf("Detect() = %#v, want installed candidate %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestLinuxCandidateLookupFailuresPreserveSuccessfulDetection(t *testing.T) {
+	tests := []struct {
+		name         string
+		id           profile.ToolID
+		executable   string
+		current      string
+		setCandidate func(*runner.Fixture, string)
+	}{
+		{
+			name: "malformed Node metadata", id: profile.Node, executable: "node", current: "v22.1.0",
+			setCandidate: func(fixture *runner.Fixture, _ string) {
+				fixture.Set("curl", []string{"-fsSL", "https://nodejs.org/dist/index.json"}, runner.Result{Stdout: "not-json"}, nil)
+			},
+		},
+		{
+			name: "npm registry outage", id: profile.NPM, executable: "npm", current: "10.8.0",
+			setCandidate: func(fixture *runner.Fixture, nvmExec string) {
+				fixture.Set("env", []string{"HOME=" + filepath.Dir(filepath.Dir(nvmExec)), "NVM_DIR=" + filepath.Dir(nvmExec), nvmExec, "npm", "view", "npm", "version"}, runner.Result{}, errors.New("registry unavailable"))
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			home := t.TempDir()
+			nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+			fixture := runner.NewFixture()
+			fixture.LookPaths[nvmExec] = nvmExec
+			fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, test.executable, "--version"}, runner.Result{Stdout: test.current + "\n"}, nil)
+			test.setCandidate(fixture, nvmExec)
+			adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+
+			got, err := adapter.Detect(context.Background(), mustTool(t, test.id))
+			if err != nil {
+				t.Fatalf("Detect() error = %v, want candidate-only failure ignored", err)
+			}
+			if got != (detect.Detection{Installed: true, Current: test.current}) {
+				t.Fatalf("Detect() = %#v, want installed/current preserved with blank candidate", got)
+			}
+			if err := adapter.Verify(context.Background(), mustTool(t, test.id)); err != nil {
+				t.Fatalf("Verify() error = %v, want candidate-only failure ignored", err)
 			}
 		})
 	}
@@ -598,6 +706,16 @@ func assertHasCommand(t *testing.T, commands []runner.Command, command string, a
 		}
 	}
 	t.Fatalf("commands %#v do not contain %#v", commands, want)
+}
+
+func assertHasCommandWithSuffix(t *testing.T, commands []runner.Command, command string, prefix []string, suffix string) {
+	t.Helper()
+	for _, got := range commands {
+		if got.Command == command && len(got.Args) == len(prefix)+2 && reflect.DeepEqual(got.Args[:len(prefix)], prefix) && got.Args[len(got.Args)-1] == suffix {
+			return
+		}
+	}
+	t.Fatalf("commands %#v do not contain %s with prefix %#v and suffix %q", commands, command, prefix, suffix)
 }
 
 func curlDestination(t *testing.T, commands []runner.Command, url string) string {

@@ -338,7 +338,7 @@ func (a linuxAdapter) detect(ctx context.Context, tool tools.Tool) (detect.Detec
 	}
 	candidate, supported, err := a.userToolCandidate(ctx, tool.ID)
 	if err != nil {
-		return detect.Detection{}, err
+		return detection, nil
 	}
 	if supported {
 		detection.Candidate = candidate
@@ -611,18 +611,35 @@ func (a linuxAdapter) detectNVMExecutable(ctx context.Context, executable string
 }
 
 func expectedMissingComponent(id tools.ToolID, result runner.Result) bool {
-	if id != profile.DockerBuildx && id != profile.DockerCompose {
+	component := ""
+	switch id {
+	case profile.DockerBuildx:
+		component = "buildx"
+	case profile.DockerCompose:
+		component = "compose"
+	default:
 		return false
 	}
 	message := strings.ToLower(result.Stdout + "\n" + result.Stderr)
-	return strings.Contains(message, "is not a docker command") || strings.Contains(message, "unknown command")
+	return strings.Contains(message, "docker: '"+component+"' is not a docker command") ||
+		strings.Contains(message, "docker: \""+component+"\" is not a docker command")
 }
 
 func expectedMissingComponentExecutable(executable string, result runner.Result) bool {
+	if result.ExitCode != 127 {
+		return false
+	}
 	switch executable {
 	case "node", "npm", "corepack", "pnpm", "yarn", "codex", "bun":
-		message := strings.ToLower(result.Stdout + "\n" + result.Stderr)
-		return result.ExitCode == 127 || strings.Contains(message, "not found") || strings.Contains(message, "no such file") || strings.Contains(message, "not recognized")
+		for _, line := range strings.Split(strings.ToLower(result.Stdout+"\n"+result.Stderr), "\n") {
+			line = strings.TrimSpace(line)
+			for _, diagnostic := range []string{executable + ": not found", executable + ": command not found"} {
+				if line == diagnostic || strings.HasSuffix(line, ": "+diagnostic) {
+					return true
+				}
+			}
+		}
+		return false
 	default:
 		return false
 	}
@@ -666,6 +683,9 @@ func (a linuxAdapter) runUserCommand(ctx context.Context, environment []string, 
 
 func (a linuxAdapter) ensureProfileBlock(ctx context.Context, name, content string) error {
 	profilePath := filepath.Join(a.config.Home, ".bashrc")
+	if a.config.Root && a.config.InvokingUser != "" && a.config.InvokingUser != "root" {
+		return a.ensureProfileBlockAsUser(ctx, profilePath, name, content)
+	}
 	if err := os.MkdirAll(filepath.Dir(profilePath), 0700); err != nil {
 		return err
 	}
@@ -673,6 +693,73 @@ func (a linuxAdapter) ensureProfileBlock(ctx context.Context, name, content stri
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	updated := updatedProfile(string(existing), name, content)
+	temporary, err := createTemporary(filepath.Dir(profilePath), ".jb-profile-*", updated)
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(temporary, profilePath); err != nil {
+		_ = os.Remove(temporary)
+		return err
+	}
+	return nil
+}
+
+func (a linuxAdapter) ensureProfileBlockAsUser(ctx context.Context, profilePath, name, content string) error {
+	directory := filepath.Dir(profilePath)
+	if _, err := a.runUserCommand(ctx, nil, "mkdir", "-p", directory); err != nil {
+		return err
+	}
+
+	mode := "0600"
+	stat, err := a.runUserCommand(ctx, nil, "stat", "-c", "%a", "--", profilePath)
+	existing := ""
+	if err == nil {
+		mode = strings.TrimSpace(stat.Stdout)
+		if _, parseErr := strconv.ParseUint(mode, 8, 12); parseErr != nil {
+			return fmt.Errorf("invalid mode %q for %s", mode, profilePath)
+		}
+		read, readErr := a.runUserCommand(ctx, nil, "cat", "--", profilePath)
+		if readErr != nil {
+			return readErr
+		}
+		existing = read.Stdout
+	} else if stat.ExitCode != 1 || !strings.Contains(strings.ToLower(stat.Stderr), "no such file or directory") {
+		return err
+	}
+
+	source, err := createTemporary(a.config.TempDir, "jb-profile-content-*", updatedProfile(existing, name, content))
+	if err != nil {
+		return err
+	}
+	defer os.Remove(source)
+	if err := os.Chmod(source, 0644); err != nil {
+		return err
+	}
+
+	created, err := a.runUserCommand(ctx, nil, "mktemp", filepath.Join(directory, ".jb-profile-XXXXXX"))
+	if err != nil {
+		return err
+	}
+	temporary := strings.TrimSpace(created.Stdout)
+	if temporary == "" || filepath.Dir(temporary) != directory {
+		return fmt.Errorf("mktemp returned invalid profile path %q", temporary)
+	}
+	cleanup := func() {
+		_, _ = a.runUserCommand(ctx, nil, "rm", "-f", "--", temporary)
+	}
+	if _, err := a.runUserCommand(ctx, nil, "install", "-m", mode, "--", source, temporary); err != nil {
+		cleanup()
+		return err
+	}
+	if _, err := a.runUserCommand(ctx, nil, "mv", "-f", "--", temporary, profilePath); err != nil {
+		cleanup()
+		return err
+	}
+	return nil
+}
+
+func updatedProfile(existing, name, content string) string {
 	start := "# >>> johanbostrom jb: " + name + " >>>"
 	end := "# <<< johanbostrom jb: " + name + " <<<"
 	lines := strings.Split(string(existing), "\n")
@@ -695,20 +782,5 @@ func (a linuxAdapter) ensureProfileBlock(ctx context.Context, name, content stri
 	if base != "" {
 		base += "\n\n"
 	}
-	updated := base + start + "\n" + content + "\n" + end + "\n"
-	temporary, err := createTemporary(filepath.Dir(profilePath), ".jb-profile-*", updated)
-	if err != nil {
-		return err
-	}
-	if err := os.Rename(temporary, profilePath); err != nil {
-		_ = os.Remove(temporary)
-		return err
-	}
-	if a.config.Root && a.config.InvokingUser != "" && a.config.InvokingUser != "root" {
-		owner := fmt.Sprintf("%d:%d", a.config.InvokingUID, a.config.InvokingGID)
-		if _, err := a.runner.Run(ctx, "chown", owner, profilePath); err != nil {
-			return err
-		}
-	}
-	return nil
+	return base + start + "\n" + content + "\n" + end + "\n"
 }

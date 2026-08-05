@@ -52,6 +52,12 @@ func MergeProfiles(profiles []profile.Profile, only []profile.ToolID) ([]profile
 		if err := addDependencies(id, expanded); err != nil {
 			return nil, err
 		}
+		tool, _ := tools.Lookup(id)
+		for _, included := range tool.Includes {
+			if err := addDependencies(included, expanded); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	planned := make([]profile.Tool, 0, len(expanded))
@@ -74,11 +80,6 @@ func addDependencies(id profile.ToolID, selected map[profile.ToolID]struct{}) er
 	selected[id] = struct{}{}
 	for _, dependency := range tool.Dependencies {
 		if err := addDependencies(dependency, selected); err != nil {
-			return err
-		}
-	}
-	for _, included := range tool.Includes {
-		if err := addDependencies(included, selected); err != nil {
 			return err
 		}
 	}

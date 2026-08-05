@@ -53,6 +53,31 @@ func TestMergeProfilesOnlyIntersectsProfileSelection(t *testing.T) {
 	}
 }
 
+func TestMergeProfilesExplicitSelectionExpandsOnlyRuntimeDependencies(t *testing.T) {
+	tests := []struct {
+		name string
+		only profile.ToolID
+		want []profile.ToolID
+	}{
+		{name: "Codex", only: profile.Codex, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM, profile.Codex}},
+		{name: "Bun", only: profile.Bun, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM, profile.Bun}},
+		{name: "npm", only: profile.NPM, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM}},
+		{name: "Docker Buildx", only: profile.DockerBuildx, want: []profile.ToolID{profile.Docker, profile.DockerBuildx}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := plan.MergeProfiles(nil, []profile.ToolID{test.only})
+			if err != nil {
+				t.Fatalf("MergeProfiles() error = %v", err)
+			}
+			if gotIDs := toolIDs(got); !reflect.DeepEqual(gotIDs, test.want) {
+				t.Fatalf("MergeProfiles() IDs = %v, want %v", gotIDs, test.want)
+			}
+		})
+	}
+}
+
 func TestMergeProfilesAcceptsOnlyWithoutProfile(t *testing.T) {
 	got, err := plan.MergeProfiles(nil, []profile.ToolID{profile.Git})
 	if err != nil {

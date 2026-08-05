@@ -96,6 +96,36 @@ func TestWindowsPreservesGenuineDockerDetectionFailure(t *testing.T) {
 	}
 }
 
+func TestWindowsBrokenPresentExecutablesRemainDetectionErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		id      profile.ToolID
+		result  runner.Result
+		wantErr error
+	}{
+		{name: "dynamic loader failure", id: profile.NPM, result: runner.Result{Stderr: "npm: error while loading shared libraries: libnode.dll: No such file or directory\n", ExitCode: 127}, wantErr: errors.New("loader failed")},
+		{name: "permission failure", id: profile.NPM, result: runner.Result{Stderr: "npm: Permission denied\n", ExitCode: 127}, wantErr: errors.New("permission denied")},
+		{name: "arbitrary missing file", id: profile.NPM, result: runner.Result{Stderr: "npm: config: No such file or directory\n", ExitCode: 1}, wantErr: errors.New("config missing")},
+		{name: "unrelated Docker unknown command", id: profile.DockerBuildx, result: runner.Result{Stderr: "docker daemon returned unknown command while loading plugin\n", ExitCode: 1}, wantErr: errors.New("plugin failed")},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := runner.NewFixture()
+			source := windowsSources[test.id]
+			path := filepath.Join(t.TempDir(), source.executable+".exe")
+			fixture.LookPaths[source.executable] = path
+			fixture.Set(path, source.version, test.result, test.wantErr)
+			adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture})
+
+			_, err := adapter.Detect(context.Background(), mustTool(t, test.id))
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("Detect() error = %v, want broken-present error %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestWindowsDetectsCandidatesForInstalledUserTools(t *testing.T) {
 	fixture := runner.NewFixture()
 	paths := map[string]string{
@@ -135,6 +165,48 @@ func TestWindowsDetectsCandidatesForInstalledUserTools(t *testing.T) {
 			}
 			if !got.Installed || got.Candidate != test.want {
 				t.Fatalf("Detect() = %#v, want candidate %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestWindowsCandidateLookupFailuresPreserveSuccessfulDetection(t *testing.T) {
+	tests := []struct {
+		name       string
+		id         profile.ToolID
+		executable string
+		current    string
+		prepare    func(*runner.Fixture, string)
+	}{
+		{name: "nvm unavailable for Node candidate", id: profile.Node, executable: "node", current: "v22.1.0"},
+		{
+			name: "npm registry outage", id: profile.NPM, executable: "npm", current: "10.8.0",
+			prepare: func(fixture *runner.Fixture, path string) {
+				fixture.Set(path, []string{"view", "npm", "version"}, runner.Result{}, errors.New("registry unavailable"))
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := runner.NewFixture()
+			path := filepath.Join(t.TempDir(), test.executable+".cmd")
+			fixture.LookPaths[test.executable] = path
+			fixture.Set(path, windowsSources[test.id].version, runner.Result{Stdout: test.current + "\n"}, nil)
+			if test.prepare != nil {
+				test.prepare(fixture, path)
+			}
+			adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture}, WindowsConfig{})
+
+			got, err := adapter.Detect(context.Background(), mustTool(t, test.id))
+			if err != nil {
+				t.Fatalf("Detect() error = %v, want candidate-only failure ignored", err)
+			}
+			if got != (detect.Detection{Installed: true, Current: test.current}) {
+				t.Fatalf("Detect() = %#v, want installed/current preserved with blank candidate", got)
+			}
+			if err := adapter.Verify(context.Background(), mustTool(t, test.id)); err != nil {
+				t.Fatalf("Verify() error = %v, want candidate-only failure ignored", err)
 			}
 		})
 	}
@@ -216,6 +288,67 @@ func TestWindowsUpdatesInstalledToolFromSameWinGetSource(t *testing.T) {
 	want := []string{"upgrade", "--id", "Git.Git", "--exact", "--accept-package-agreements", "--accept-source-agreements"}
 	if got := elevation.commands[0]; got.Command != "winget" || !reflect.DeepEqual(got.Args, want) {
 		t.Fatalf("WinGet command = %#v, want winget %#v", got, want)
+	}
+}
+
+func TestWindowsDockerPartialStateUsesOnePhysicalPackageRepair(t *testing.T) {
+	tests := []struct {
+		name    string
+		missing map[profile.ToolID]bool
+	}{
+		{name: "Buildx missing", missing: map[profile.ToolID]bool{profile.DockerBuildx: true}},
+		{name: "Compose missing", missing: map[profile.ToolID]bool{profile.DockerCompose: true}},
+		{name: "both components missing", missing: map[profile.ToolID]bool{profile.DockerBuildx: true, profile.DockerCompose: true}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := runner.NewFixture()
+			dockerPath := `C:\Program Files\Docker\Docker\resources\bin\docker.exe`
+			fixture.LookPaths["docker"] = dockerPath
+			fixture.Set(dockerPath, []string{"--version"}, runner.Result{Stdout: "Docker version 28.1.1\n"}, nil)
+			for _, id := range []profile.ToolID{profile.DockerBuildx, profile.DockerCompose} {
+				source := windowsSources[id]
+				if test.missing[id] {
+					component := "buildx"
+					if id == profile.DockerCompose {
+						component = "compose"
+					}
+					fixture.Set(dockerPath, source.version, runner.Result{Stderr: "docker: '" + component + "' is not a docker command\n", ExitCode: 1}, errors.New("exit status 1"))
+				} else {
+					fixture.Set(dockerPath, source.version, runner.Result{Stdout: string(id) + " 1.0.0\n"}, nil)
+				}
+			}
+			fixture.Set("winget", []string{"show", "--id", "Docker.DockerDesktop", "--exact"}, runner.Result{Stdout: "Version: 4.42.0\n"}, nil)
+			elevation := &windowsFixtureElevation{fixture: fixture}
+			adapter := NewWindowsAdapter(fixture, elevation)
+
+			ids := []profile.ToolID{profile.Docker, profile.DockerBuildx, profile.DockerCompose}
+			detections := make(map[profile.ToolID]detect.Detection, len(ids))
+			for _, id := range ids {
+				tool := mustTool(t, id)
+				detection, err := adapter.Detect(context.Background(), tool)
+				if err != nil {
+					t.Fatalf("Detect(%s): %v", id, err)
+				}
+				detections[id] = detection
+			}
+			for _, id := range ids {
+				tool := mustTool(t, id)
+				if detections[id].Installed {
+					if err := adapter.Update(context.Background(), tool); err != nil {
+						t.Fatalf("Update(%s): %v", id, err)
+					}
+				} else if err := adapter.Install(context.Background(), tool); err != nil {
+					t.Fatalf("Install(%s): %v", id, err)
+				}
+			}
+
+			want := []string{"install", "--id", "Docker.DockerDesktop", "--exact", "--accept-package-agreements", "--accept-source-agreements", "--force"}
+			if len(elevation.commands) != 1 || elevation.commands[0].Command != "winget" || !reflect.DeepEqual(elevation.commands[0].Args, want) {
+				t.Fatalf("Docker convergence commands = %#v, want one forced physical-package repair %#v", elevation.commands, want)
+			}
+		})
 	}
 }
 

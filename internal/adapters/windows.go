@@ -21,6 +21,8 @@ type WindowsAdapter struct {
 	elevation runner.Elevation
 	config    WindowsConfig
 	converged map[string]struct{}
+	installed map[string]bool
+	repair    map[string]bool
 }
 
 type WindowsConfig struct {
@@ -71,7 +73,10 @@ func NewWindowsAdapter(commandRunner runner.Runner, elevation runner.Elevation, 
 	if config.NVMSymlink == "" {
 		config.NVMSymlink = filepath.Join(config.ProgramFiles, "nodejs")
 	}
-	return &WindowsAdapter{runner: commandRunner, elevation: elevation, config: config, converged: make(map[string]struct{})}
+	return &WindowsAdapter{
+		runner: commandRunner, elevation: elevation, config: config,
+		converged: make(map[string]struct{}), installed: make(map[string]bool), repair: make(map[string]bool),
+	}
 }
 
 func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.Detection, error) {
@@ -93,6 +98,12 @@ func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.De
 		}
 	}
 	if source.packageID != "" {
+		if tool.ID == profile.Docker && detection.Installed {
+			a.installed[source.packageID] = true
+		}
+		if (tool.ID == profile.DockerBuildx || tool.ID == profile.DockerCompose) && !detection.Installed && a.installed[source.packageID] {
+			a.repair[source.packageID] = true
+		}
 		result, err := a.runner.Run(ctx, "winget", "show", "--id", source.packageID, "--exact")
 		if err == nil {
 			detection.Candidate = labeledValue(result.Stdout, "Version")
@@ -100,7 +111,7 @@ func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.De
 	} else if detection.Installed {
 		candidate, err := a.userToolCandidate(ctx, tool.ID)
 		if err != nil {
-			return detect.Detection{}, err
+			return detection, nil
 		}
 		detection.Candidate = candidate
 	}
@@ -218,11 +229,17 @@ func (a *WindowsAdapter) Verify(ctx context.Context, tool tools.Tool) error {
 }
 
 func (a *WindowsAdapter) winGet(ctx context.Context, action string, source windowsToolSource) error {
-	key := action + "\x00" + source.packageID
-	if _, ok := a.converged[key]; ok {
+	if _, ok := a.converged[source.packageID]; ok {
 		return nil
 	}
+	force := a.repair[source.packageID]
+	if force {
+		action = "install"
+	}
 	args := []string{action, "--id", source.packageID, "--exact", "--accept-package-agreements", "--accept-source-agreements"}
+	if force {
+		args = append(args, "--force")
+	}
 	var err error
 	if !source.system {
 		err = a.run(ctx, "winget", args...)
@@ -230,7 +247,7 @@ func (a *WindowsAdapter) winGet(ctx context.Context, action string, source windo
 		_, err = a.elevation.RunElevated(ctx, "winget", args...)
 	}
 	if err == nil {
-		a.converged[key] = struct{}{}
+		a.converged[source.packageID] = struct{}{}
 	}
 	return err
 }
