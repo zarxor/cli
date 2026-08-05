@@ -185,4 +185,66 @@ assert_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "usermod -aG docker tester" "conf
 configure_node_default <<<"y"
 assert_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "nvm alias default lts/\*" "confirmed Node setup selects LTS as nvm's default"
 
+orchestration_output=$(
+  require_supported_host() { :; }
+  install_system_packages() { :; }
+  install_user_tools() { :; }
+  verify_tools() { :; }
+  run_wizard() { :; }
+  main
+)
+assert_in_order "$orchestration_output" "main runs all required phases in order" \
+  "Checking host" \
+  "Installing or updating system tools" \
+  "Installing or updating user tools" \
+  "Verifying installed tools" \
+  "Optional setup wizard" \
+  "Setup complete"
+
+set +e
+failure_output=$(
+  {
+    require_supported_host() { :; }
+    install_system_packages() { return 42; }
+    install_user_tools() { printf 'unexpected user tools\n'; }
+    verify_tools() { printf 'unexpected verification\n'; }
+    run_wizard() { printf 'unexpected wizard\n'; }
+    main
+  } 2>&1
+)
+failure_status=$?
+set -e
+if [[ $failure_status -ne 0 ]]; then
+  pass "required phase failures propagate a nonzero status"
+else
+  fail "required phase failures propagate a nonzero status"
+fi
+assert_contains "$failure_output" "Installing or updating system tools failed" "failures name their phase"
+assert_not_contains "$failure_output" "unexpected wizard" "failures stop before the wizard"
+assert_not_contains "$failure_output" "Setup complete" "failures never print a success summary"
+
+export DEV_SETUP_VERSION_GIT="git version 2.50.0"
+export DEV_SETUP_VERSION_GH="gh version 2.75.0"
+export DEV_SETUP_VERSION_DOCKER="Docker version 28.0.0"
+export DEV_SETUP_VERSION_DOCKER_COMPOSE="Docker Compose version v2.38.0"
+export DEV_SETUP_VERSION_NVM="0.40.4"
+export DEV_SETUP_VERSION_NODE="v24.0.0"
+export DEV_SETUP_VERSION_NPM="11.0.0"
+export DEV_SETUP_VERSION_PNPM="10.0.0"
+export DEV_SETUP_VERSION_YARN="4.9.0"
+export DEV_SETUP_VERSION_BUN="1.2.0"
+export DEV_SETUP_VERSION_CODEX="codex-cli 0.60.0"
+set +e
+version_output=$(verify_tools 2>&1)
+version_status=$?
+set -e
+assert_eq 0 "$version_status" "version verification succeeds when every tool is available"
+for tool_name in Git "GitHub CLI" Docker "Docker Compose" nvm Node.js npm pnpm Yarn Bun Codex; do
+  assert_contains "$version_output" "$tool_name:" "version summary includes $tool_name"
+done
+
+DOCKER_LOGOUT_REQUIRED=1
+summary_output=$(print_summary)
+assert_count 1 "$summary_output" "Log out and back in before using Docker without sudo." "the logout note appears exactly once"
+
 finish_tests

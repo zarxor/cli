@@ -49,6 +49,20 @@ assert_count() {
   assert_eq "$expected" "$count" "$message"
 }
 
+assert_in_order() {
+  local haystack=$1 message=$2
+  shift 2
+  local needle remainder=$haystack
+  for needle in "$@"; do
+    if [[ "$remainder" != *"$needle"* ]]; then
+      fail "$message (missing or out of order: '$needle')"
+      return
+    fi
+    remainder=${remainder#*"$needle"}
+  done
+  pass "$message"
+}
+
 finish_tests() {
   if ((TEST_FAILURES > 0)); then
     printf '%d test(s) failed\n' "$TEST_FAILURES" >&2

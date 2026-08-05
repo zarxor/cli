@@ -11,6 +11,15 @@ DISTRO_ID_LIKE=
 DISTRO_VERSION_CODENAME=
 DISTRO_UBUNTU_CODENAME=
 DISTRO_DEBIAN_CODENAME=
+CURRENT_PHASE=initialization
+DOCKER_LOGOUT_REQUIRED=0
+WIZARD_STATUS=not-run
+
+on_error() {
+  local exit_code=$?
+  printf '[dev-setup] ERROR: %s failed (exit %d).\n' "$CURRENT_PHASE" "$exit_code" >&2
+  exit "$exit_code"
+}
 
 log() {
   printf '[dev-setup] %s\n' "$*"
@@ -418,6 +427,7 @@ configure_node_default() {
 
 run_wizard() {
   if ! confirm "Installation finished. Start the optional setup wizard?"; then
+    WIZARD_STATUS=skipped
     log "Setup wizard skipped."
     return 0
   fi
@@ -427,10 +437,70 @@ run_wizard() {
   configure_codex_auth
   configure_docker_access
   configure_node_default
+  WIZARD_STATUS=completed
+}
+
+read_version() {
+  local label=$1 override_name=$2
+  shift 2
+  local version=${!override_name:-}
+  if [[ -z "$version" ]]; then
+    version=$("$@" 2>&1 | head -n1)
+  fi
+  [[ -n "$version" ]] || {
+    die "$label is not available after installation."
+    return 1
+  }
+  printf '%s: %s\n' "$label" "$version"
+}
+
+verify_tools() {
+  read_version Git DEV_SETUP_VERSION_GIT git --version
+  read_version "GitHub CLI" DEV_SETUP_VERSION_GH gh --version
+  read_version Docker DEV_SETUP_VERSION_DOCKER docker --version
+  read_version "Docker Compose" DEV_SETUP_VERSION_DOCKER_COMPOSE docker compose version
+  read_version nvm DEV_SETUP_VERSION_NVM nvm --version
+  read_version Node.js DEV_SETUP_VERSION_NODE node --version
+  read_version npm DEV_SETUP_VERSION_NPM npm --version
+  read_version pnpm DEV_SETUP_VERSION_PNPM pnpm --version
+  read_version Yarn DEV_SETUP_VERSION_YARN yarn --version
+  read_version Bun DEV_SETUP_VERSION_BUN bun --version
+  read_version Codex DEV_SETUP_VERSION_CODEX codex --version
+}
+
+print_summary() {
+  printf '[dev-setup] Wizard: %s.\n' "$WIZARD_STATUS"
+  if [[ "$DOCKER_LOGOUT_REQUIRED" == 1 ]]; then
+    printf '[dev-setup] Log out and back in before using Docker without sudo.\n'
+  fi
+  printf '[dev-setup] Open a new shell to load any updated PATH entries.\n'
 }
 
 main() {
+  trap on_error ERR
+  CURRENT_PHASE="Checking host"
+  log "$CURRENT_PHASE"
   require_supported_host
+
+  CURRENT_PHASE="Installing or updating system tools"
+  log "$CURRENT_PHASE"
+  install_system_packages
+
+  CURRENT_PHASE="Installing or updating user tools"
+  log "$CURRENT_PHASE"
+  install_user_tools
+
+  CURRENT_PHASE="Verifying installed tools"
+  log "$CURRENT_PHASE"
+  verify_tools
+
+  CURRENT_PHASE="Optional setup wizard"
+  log "$CURRENT_PHASE"
+  run_wizard
+
+  print_summary
+  CURRENT_PHASE="Setup complete"
+  log "$CURRENT_PHASE"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" && "${DEV_SETUP_TEST_MODE:-0}" != 1 ]]; then
