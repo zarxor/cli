@@ -166,6 +166,146 @@ install_system_packages() {
   esac
 }
 
+run_user_installer() {
+  local source_url=$1 interpreter=$2 temporary_file
+  record_command curl -fsSL "$source_url"
+  record_command "$interpreter" downloaded-installer
+  [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] && return 0
+
+  temporary_file=$(mktemp)
+  if ! curl -fsSL "$source_url" -o "$temporary_file"; then
+    rm -f "$temporary_file"
+    die "Failed to download $source_url"
+    return 1
+  fi
+  "$interpreter" "$temporary_file"
+  rm -f "$temporary_file"
+}
+
+replace_profile_block() {
+  local profile=$1 block_name=$2 block_content=$3
+  local start_marker="# >>> johanbostrom dev setup: $block_name >>>"
+  local end_marker="# <<< johanbostrom dev setup: $block_name <<<"
+  local temporary_file
+
+  mkdir -p "$(dirname "$profile")"
+  touch "$profile"
+  temporary_file=$(mktemp)
+  awk -v start="$start_marker" -v end="$end_marker" '
+    $0 == start { skipping = 1; next }
+    $0 == end { skipping = 0; next }
+    !skipping { print }
+  ' "$profile" >"$temporary_file"
+  {
+    cat "$temporary_file"
+    printf '\n%s\n%s\n%s\n' "$start_marker" "$block_content" "$end_marker"
+  } >"$profile"
+  rm -f "$temporary_file"
+}
+
+ensure_shell_profile() {
+  local profile="$DEV_SETUP_HOME/.bashrc"
+  replace_profile_block "$profile" paths \
+    'export PATH="$HOME/.local/bin:$PATH"'
+  replace_profile_block "$profile" nvm \
+    'export NVM_DIR="${XDG_CONFIG_HOME:-$HOME/.nvm}"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"'
+  replace_profile_block "$profile" bun \
+    'export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"'
+}
+
+install_or_update_codex() {
+  run_user_installer https://chatgpt.com/codex/install.sh sh
+  export PATH="$DEV_SETUP_HOME/.local/bin:$PATH"
+}
+
+resolve_nvm_version() {
+  local version=${DEV_SETUP_NVM_VERSION:-}
+  if [[ -z "$version" ]]; then
+    version=$(git ls-remote --tags --refs https://github.com/nvm-sh/nvm.git 'v*' |
+      awk -F/ '{print $3}' | sort -V | tail -n1)
+  fi
+  [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+    die "Could not resolve a stable nvm release."
+    return 1
+  }
+  printf '%s\n' "$version"
+}
+
+install_or_update_nvm() {
+  local nvm_version installer_url temporary_file
+  nvm_version=$(resolve_nvm_version)
+  installer_url="https://raw.githubusercontent.com/nvm-sh/nvm/$nvm_version/install.sh"
+  record_command curl -fsSL "$installer_url"
+  record_command env PROFILE=/dev/null "NVM_DIR=$DEV_SETUP_HOME/.nvm" bash downloaded-installer
+  [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] && return 0
+
+  temporary_file=$(mktemp)
+  if ! curl -fsSL "$installer_url" -o "$temporary_file"; then
+    rm -f "$temporary_file"
+    die "Failed to download $installer_url"
+    return 1
+  fi
+  PROFILE=/dev/null NVM_DIR="$DEV_SETUP_HOME/.nvm" bash "$temporary_file"
+  rm -f "$temporary_file"
+}
+
+load_nvm() {
+  export NVM_DIR=${XDG_CONFIG_HOME:-$DEV_SETUP_HOME/.nvm}
+  if [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]]; then
+    return 0
+  fi
+  [[ -s "$NVM_DIR/nvm.sh" ]] || {
+    die "nvm was installed but $NVM_DIR/nvm.sh is missing."
+    return 1
+  }
+  # shellcheck disable=SC1090
+  source "$NVM_DIR/nvm.sh"
+}
+
+install_or_update_node_tools() {
+  load_nvm
+  run nvm install --lts --latest-npm
+  run nvm use --lts
+  run npm install --global npm@latest
+  run npm install --global corepack@latest
+  run corepack enable
+  run corepack prepare pnpm@latest --activate
+  run corepack prepare yarn@stable --activate
+}
+
+install_or_update_bun() {
+  local bun_bin="$DEV_SETUP_HOME/.bun/bin/bun" temporary_file
+  if [[ "${DEV_SETUP_BUN_PRESENT:-0}" == 1 || -x "$bun_bin" ]]; then
+    run "$bun_bin" upgrade --stable
+  else
+    record_command curl -fsSL https://bun.sh/install
+    record_command env "BUN_INSTALL=$DEV_SETUP_HOME/.bun" bash downloaded-installer
+    if [[ "${DEV_SETUP_TEST_MODE:-0}" != 1 ]]; then
+      temporary_file=$(mktemp)
+      if ! curl -fsSL https://bun.sh/install -o "$temporary_file"; then
+        rm -f "$temporary_file"
+        die "Failed to download https://bun.sh/install"
+        return 1
+      fi
+      BUN_INSTALL="$DEV_SETUP_HOME/.bun" bash "$temporary_file"
+      rm -f "$temporary_file"
+    fi
+  fi
+  export BUN_INSTALL="$DEV_SETUP_HOME/.bun"
+  export PATH="$BUN_INSTALL/bin:$PATH"
+}
+
+install_user_tools() {
+  install_or_update_codex
+  install_or_update_nvm
+  install_or_update_node_tools
+  install_or_update_bun
+  ensure_shell_profile
+}
+
 main() {
   require_supported_host
 }

@@ -92,4 +92,43 @@ rerun_commands=$(<"$DEV_SETUP_COMMAND_LOG")
 assert_not_contains "$rerun_commands" "tee -a" "reruns never append repository definitions"
 assert_not_contains "$rerun_commands" ">>" "reruns never duplicate repository definitions"
 
+: >"$DEV_SETUP_COMMAND_LOG"
+export DEV_SETUP_NVM_VERSION=v0.40.4
+install_or_update_codex
+install_or_update_nvm
+install_or_update_node_tools
+user_tool_commands=$(<"$DEV_SETUP_COMMAND_LOG")
+assert_contains "$user_tool_commands" "https://chatgpt.com/codex/install.sh" "Codex uses the official stable installer and updater"
+assert_contains "$user_tool_commands" "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh" "nvm installs the resolved stable release"
+assert_contains "$user_tool_commands" "nvm install --lts --latest-npm" "Node converges on the latest LTS release"
+assert_contains "$user_tool_commands" "nvm use --lts" "the current shell activates Node LTS"
+assert_contains "$user_tool_commands" "npm install --global npm@latest" "npm upgrades to latest stable"
+assert_contains "$user_tool_commands" "npm install --global corepack@latest" "Corepack upgrades to latest stable"
+assert_contains "$user_tool_commands" "corepack enable" "Corepack shims are enabled"
+assert_contains "$user_tool_commands" "corepack prepare pnpm@latest --activate" "pnpm activates its latest stable release"
+assert_contains "$user_tool_commands" "corepack prepare yarn@stable --activate" "Yarn activates its stable release"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+rm -rf "$DEV_SETUP_HOME/.bun"
+install_or_update_bun
+missing_bun_commands=$(<"$DEV_SETUP_COMMAND_LOG")
+assert_contains "$missing_bun_commands" "https://bun.sh/install" "missing Bun uses the official installer"
+
+mkdir -p "$DEV_SETUP_HOME/.bun/bin"
+: >"$DEV_SETUP_HOME/.bun/bin/bun"
+chmod +x "$DEV_SETUP_HOME/.bun/bin/bun"
+: >"$DEV_SETUP_COMMAND_LOG"
+export DEV_SETUP_BUN_PRESENT=1
+install_or_update_bun
+unset DEV_SETUP_BUN_PRESENT
+existing_bun_commands=$(<"$DEV_SETUP_COMMAND_LOG")
+assert_contains "$existing_bun_commands" "upgrade --stable" "existing Bun upgrades to stable"
+
+: >"$DEV_SETUP_HOME/.bashrc"
+ensure_shell_profile
+ensure_shell_profile
+profile_content=$(<"$DEV_SETUP_HOME/.bashrc")
+assert_count 1 "$profile_content" "# >>> johanbostrom dev setup: nvm >>>" "reruns keep one nvm profile block"
+assert_count 1 "$profile_content" "# >>> johanbostrom dev setup: bun >>>" "reruns keep one Bun profile block"
+
 finish_tests

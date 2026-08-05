@@ -38,6 +38,17 @@ assert_not_contains() {
   fi
 }
 
+assert_count() {
+  local expected=$1 haystack=$2 needle=$3 message=$4 count remainder
+  count=0
+  remainder=$haystack
+  while [[ "$remainder" == *"$needle"* ]]; do
+    remainder=${remainder#*"$needle"}
+    count=$((count + 1))
+  done
+  assert_eq "$expected" "$count" "$message"
+}
+
 finish_tests() {
   if ((TEST_FAILURES > 0)); then
     printf '%d test(s) failed\n' "$TEST_FAILURES" >&2
