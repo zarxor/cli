@@ -25,7 +25,10 @@ type Adapter interface {
 }
 
 // LinuxConfig supplies host facts which platform detection already knows and
-// keeps adapter fixtures independent from the machine running the tests.
+// keeps adapter fixtures independent from the machine running the tests. Root
+// defaults to false; Home, TempDir, and Architecture receive local defaults.
+// Callers must provide the invoking user's Home and the live Distribution and
+// Codename values before configuring Docker on Debian or Ubuntu.
 type LinuxConfig struct {
 	Root         bool
 	Home         string
@@ -82,7 +85,16 @@ func newLinuxAdapter(commandRunner runner.Runner, elevation runner.Elevation, co
 	if config.Architecture == "" {
 		config.Architecture = debianArchitecture(runtime.GOARCH)
 	}
+	if elevation == nil {
+		elevation = sudoElevation{runner: commandRunner}
+	}
 	return linuxAdapter{runner: commandRunner, elevation: elevation, config: config}
+}
+
+type sudoElevation struct{ runner runner.Runner }
+
+func (s sudoElevation) RunElevated(ctx context.Context, command string, args ...string) (runner.Result, error) {
+	return s.runner.Run(ctx, "sudo", append([]string{command}, args...)...)
 }
 
 func debianArchitecture(goarch string) string {
@@ -96,7 +108,7 @@ func debianArchitecture(goarch string) string {
 
 func (a *DebianAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.Detection, error) {
 	detection, err := a.detect(ctx, tool)
-	if err != nil || !detection.Installed {
+	if err != nil {
 		return detection, err
 	}
 	packages, ok := debianPackages(tool.ID)
@@ -158,6 +170,18 @@ func (a *DebianAdapter) Update(ctx context.Context, tool tools.Tool) error {
 			if err := a.configureDocker(ctx); err != nil {
 				return err
 			}
+			if tool.ID == profile.Docker {
+				if err := a.removeDockerConflicts(ctx); err != nil {
+					return err
+				}
+				if err := a.system(ctx, "apt-get", "update"); err != nil {
+					return err
+				}
+				if err := a.system(ctx, "apt-get", "install", "-y", "docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"); err != nil {
+					return err
+				}
+				return a.system(ctx, "systemctl", "enable", "--now", "docker.service")
+			}
 		}
 		if err := a.system(ctx, "apt-get", "update"); err != nil {
 			return err
@@ -206,18 +230,20 @@ func (a *DebianAdapter) configureGitHubCLI(ctx context.Context) error {
 	if err := a.system(ctx, "install", "-m", "0755", "-d", "/etc/apt/keyrings", "/etc/apt/sources.list.d"); err != nil {
 		return err
 	}
-	key := filepath.Join(a.config.TempDir, "githubcli-archive-keyring.gpg")
-	if err := a.download(ctx, githubCLIKeyURL, key); err != nil {
+	key, err := a.downloadTemporary(ctx, "jb-githubcli-key-*", githubCLIKeyURL)
+	if err != nil {
 		return err
 	}
+	defer os.Remove(key)
 	if err := a.system(ctx, "install", "-m", "0644", key, "/etc/apt/keyrings/githubcli-archive-keyring.gpg"); err != nil {
 		return err
 	}
-	source := filepath.Join(a.config.TempDir, "github-cli.list")
 	content := fmt.Sprintf("deb [arch=%s signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\n", a.config.Architecture)
-	if err := writeTemporary(source, content); err != nil {
+	source, err := createTemporary(a.config.TempDir, "jb-github-cli-source-*", content)
+	if err != nil {
 		return err
 	}
+	defer os.Remove(source)
 	return a.system(ctx, "install", "-m", "0644", source, "/etc/apt/sources.list.d/github-cli.list")
 }
 
@@ -231,19 +257,21 @@ func (a *DebianAdapter) configureDocker(ctx context.Context) error {
 	if err := a.system(ctx, "install", "-m", "0755", "-d", "/etc/apt/keyrings", "/etc/apt/sources.list.d"); err != nil {
 		return err
 	}
-	key := filepath.Join(a.config.TempDir, "docker.asc")
 	keyURL := "https://download.docker.com/linux/" + a.config.Distribution + "/gpg"
-	if err := a.download(ctx, keyURL, key); err != nil {
+	key, err := a.downloadTemporary(ctx, "jb-docker-key-*", keyURL)
+	if err != nil {
 		return err
 	}
+	defer os.Remove(key)
 	if err := a.system(ctx, "install", "-m", "0644", key, "/etc/apt/keyrings/docker.asc"); err != nil {
 		return err
 	}
-	source := filepath.Join(a.config.TempDir, "docker.sources")
 	content := fmt.Sprintf("Types: deb\nURIs: https://download.docker.com/linux/%s\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n", a.config.Distribution, a.config.Codename, a.config.Architecture)
-	if err := writeTemporary(source, content); err != nil {
+	source, err := createTemporary(a.config.TempDir, "jb-docker-source-*", content)
+	if err != nil {
 		return err
 	}
+	defer os.Remove(source)
 	return a.system(ctx, "install", "-m", "0644", source, "/etc/apt/sources.list.d/docker.sources")
 }
 
@@ -266,26 +294,53 @@ func (a linuxAdapter) system(ctx context.Context, command string, args ...string
 		_, err := a.runner.Run(ctx, command, args...)
 		return err
 	}
-	_, err := a.runner.Run(ctx, "sudo", append([]string{command}, args...)...)
+	_, err := a.elevation.RunElevated(ctx, command, args...)
 	return err
 }
 
-func (a linuxAdapter) download(ctx context.Context, url, destination string) error {
-	if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
-		return err
+func (a linuxAdapter) downloadTemporary(ctx context.Context, pattern, url string) (string, error) {
+	destination, err := createTemporary(a.config.TempDir, pattern, "")
+	if err != nil {
+		return "", err
 	}
-	_, err := a.runner.Run(ctx, "curl", "-fsSL", url, "-o", destination)
-	return err
+	if _, err := a.runner.Run(ctx, "curl", "-fsSL", url, "-o", destination); err != nil {
+		_ = os.Remove(destination)
+		return "", err
+	}
+	return destination, nil
 }
 
-func writeTemporary(path, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
+func createTemporary(directory, pattern, content string) (string, error) {
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return "", err
 	}
-	return os.WriteFile(path, []byte(content), 0600)
+	file, err := os.CreateTemp(directory, pattern)
+	if err != nil {
+		return "", err
+	}
+	path := file.Name()
+	cleanup := func() {
+		_ = file.Close()
+		_ = os.Remove(path)
+	}
+	if _, err := file.WriteString(content); err != nil {
+		cleanup()
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		cleanup()
+		return "", err
+	}
+	return path, nil
 }
 
 func (a linuxAdapter) detect(ctx context.Context, tool tools.Tool) (detect.Detection, error) {
+	if tool.ID == profile.NVM {
+		return a.detectNVM(ctx)
+	}
+	if executable, ok := nvmExecutable(tool.ID); ok {
+		return a.detectNVMExecutable(ctx, executable)
+	}
 	command, args, err := a.versionCommand(tool.ID)
 	if err != nil {
 		return detect.Detection{}, err
@@ -324,19 +379,7 @@ func (a linuxAdapter) versionCommand(id tools.ToolID) (string, []string, error) 
 	case profile.DockerCompose:
 		return "docker", []string{"compose", "version"}, nil
 	case profile.Codex:
-		return "codex", []string{"--version"}, nil
-	case profile.NVM:
-		return filepath.Join(a.config.Home, ".nvm", "nvm-exec"), []string{"nvm", "--version"}, nil
-	case profile.Node:
-		return "node", []string{"--version"}, nil
-	case profile.NPM:
-		return "npm", []string{"--version"}, nil
-	case profile.Corepack:
-		return "corepack", []string{"--version"}, nil
-	case profile.PNPM:
-		return "pnpm", []string{"--version"}, nil
-	case profile.Yarn:
-		return "yarn", []string{"--version"}, nil
+		return filepath.Join(a.config.Home, ".local", "bin", "codex"), []string{"--version"}, nil
 	case profile.Bun:
 		return filepath.Join(a.config.Home, ".bun", "bin", "bun"), []string{"--version"}, nil
 	default:
@@ -356,16 +399,16 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 	case profile.Node:
 		return a.runNVM(ctx, "install", "--lts", "--latest-npm")
 	case profile.NPM:
-		return a.userRun(ctx, "npm", "install", "--global", "npm@latest")
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "npm@latest")
 	case profile.Corepack:
-		if err := a.userRun(ctx, "npm", "install", "--global", "corepack@latest"); err != nil {
+		if err := a.runNVMExecutable(ctx, "npm", "install", "--global", "corepack@latest"); err != nil {
 			return err
 		}
-		return a.userRun(ctx, "corepack", "enable")
+		return a.runNVMExecutable(ctx, "corepack", "enable")
 	case profile.PNPM:
-		return a.userRun(ctx, "corepack", "prepare", "pnpm@latest", "--activate")
+		return a.runNVMExecutable(ctx, "corepack", "prepare", "pnpm@latest", "--activate")
 	case profile.Yarn:
-		return a.userRun(ctx, "corepack", "prepare", "yarn@stable", "--activate")
+		return a.runNVMExecutable(ctx, "corepack", "prepare", "yarn@stable", "--activate")
 	case profile.Bun:
 		if err := a.runInstaller(ctx, "bun", bunInstaller, "env", "HOME="+a.config.Home, "BUN_INSTALL="+filepath.Join(a.config.Home, ".bun"), "bash"); err != nil {
 			return err
@@ -451,22 +494,76 @@ func newerVersion(candidate, current [3]int) bool {
 }
 
 func (a linuxAdapter) runInstaller(ctx context.Context, name, url, command string, prefixArgs ...string) error {
-	installer := filepath.Join(a.config.TempDir, "jb-"+name+"-install.sh")
-	if err := writeTemporary(installer, ""); err != nil {
+	installer, err := a.downloadTemporary(ctx, "jb-"+name+"-install-*", url)
+	if err != nil {
 		return err
 	}
 	defer os.Remove(installer)
-	if err := a.download(ctx, url, installer); err != nil {
-		return err
-	}
 	args := append(append([]string(nil), prefixArgs...), installer)
-	_, err := a.runner.Run(ctx, command, args...)
+	_, err = a.runner.Run(ctx, command, args...)
 	return err
 }
 
 func (a linuxAdapter) runNVM(ctx context.Context, args ...string) error {
+	_, err := a.runNVMCommand(ctx, args...)
+	return err
+}
+
+func (a linuxAdapter) runNVMCommand(ctx context.Context, args ...string) (runner.Result, error) {
+	helper, err := createTemporary(a.config.TempDir, "jb-nvm-command-*", "#!/bin/sh\nset -eu\n. \"$NVM_DIR/nvm.sh\"\nnvm \"$@\"\n")
+	if err != nil {
+		return runner.Result{}, err
+	}
+	defer os.Remove(helper)
+	commandArgs := []string{"HOME=" + a.config.Home, "NVM_DIR=" + filepath.Join(a.config.Home, ".nvm"), "sh", helper}
+	return a.runner.Run(ctx, "env", append(commandArgs, args...)...)
+}
+
+func (a linuxAdapter) runNVMExecutable(ctx context.Context, executable string, args ...string) error {
 	nvmExec := filepath.Join(a.config.Home, ".nvm", "nvm-exec")
-	return a.userRun(ctx, nvmExec, append([]string{"nvm"}, args...)...)
+	_, err := a.runner.Run(ctx, "env", append([]string{"HOME=" + a.config.Home, "NVM_DIR=" + filepath.Join(a.config.Home, ".nvm"), nvmExec, executable}, args...)...)
+	return err
+}
+
+func (a linuxAdapter) detectNVM(ctx context.Context) (detect.Detection, error) {
+	nvmExec := filepath.Join(a.config.Home, ".nvm", "nvm-exec")
+	if _, err := a.runner.LookPath(ctx, nvmExec); err != nil {
+		return detect.Detection{Installed: false}, nil
+	}
+	result, err := a.runNVMCommand(ctx, "--version")
+	if err != nil {
+		return detect.Detection{}, err
+	}
+	return detect.Detection{Installed: true, Current: detect.ParseVersion(result.Stdout, result.Stderr)}, nil
+}
+
+func (a linuxAdapter) detectNVMExecutable(ctx context.Context, executable string) (detect.Detection, error) {
+	nvmExec := filepath.Join(a.config.Home, ".nvm", "nvm-exec")
+	if _, err := a.runner.LookPath(ctx, nvmExec); err != nil {
+		return detect.Detection{Installed: false}, nil
+	}
+	result, err := a.runner.Run(ctx, "env", "HOME="+a.config.Home, "NVM_DIR="+filepath.Join(a.config.Home, ".nvm"), nvmExec, executable, "--version")
+	if err != nil {
+		return detect.Detection{}, err
+	}
+	return detect.Detection{Installed: true, Current: detect.ParseVersion(result.Stdout, result.Stderr)}, nil
+}
+
+func nvmExecutable(id tools.ToolID) (string, bool) {
+	switch id {
+	case profile.Node:
+		return "node", true
+	case profile.NPM:
+		return "npm", true
+	case profile.Corepack:
+		return "corepack", true
+	case profile.PNPM:
+		return "pnpm", true
+	case profile.Yarn:
+		return "yarn", true
+	default:
+		return "", false
+	}
 }
 
 func (a linuxAdapter) userRun(ctx context.Context, command string, args ...string) error {
@@ -506,8 +603,8 @@ func (a linuxAdapter) ensureProfileBlock(name, content string) error {
 		base += "\n\n"
 	}
 	updated := base + start + "\n" + content + "\n" + end + "\n"
-	temporary := profilePath + ".jb.tmp"
-	if err := os.WriteFile(temporary, []byte(updated), 0600); err != nil {
+	temporary, err := createTemporary(filepath.Dir(profilePath), ".jb-profile-*", updated)
+	if err != nil {
 		return err
 	}
 	if err := os.Rename(temporary, profilePath); err != nil {

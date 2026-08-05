@@ -19,7 +19,7 @@ func NewArchAdapter(commandRunner runner.Runner, elevation runner.Elevation, con
 
 func (a *ArchAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.Detection, error) {
 	detection, err := a.detect(ctx, tool)
-	if err != nil || !detection.Installed {
+	if err != nil {
 		return detection, err
 	}
 	packageName, ok := archPackage(tool.ID)
