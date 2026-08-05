@@ -25,6 +25,8 @@ assert_contains "$readme" "https://scripts.johanbostrom.se/linux/dev-server/setu
 assert_contains "$readme" "bash <(curl -fsSL https://scripts.johanbostrom.se/linux/dev-server/setup.sh)" "README preserves wizard input in its one-line command"
 assert_contains "$readme" "Debian" "README documents Debian support"
 assert_contains "$readme" "Arch" "README documents Arch support"
+assert_contains "$readme" "Running as root is supported" "README documents root support"
+assert_contains "$readme" "root's home directory" "README documents root tool locations"
 assert_contains "$readme" "rerun" "README documents update behavior on reruns"
 assert_contains "$readme" "docker group grants root-level privileges" "README documents Docker's security impact"
 
@@ -34,6 +36,7 @@ else
   validation_workflow=
 fi
 assert_contains "$validation_workflow" "actions/checkout@v6" "validation checks out the repository"
+assert_contains "$validation_workflow" "safe.directory" "validation trusts the container checkout directory"
 assert_contains "$validation_workflow" "shellcheck --severity=warning" "validation enforces ShellCheck warnings"
 assert_contains "$validation_workflow" "bash tests/run.bash" "validation runs behavioral tests"
 assert_contains "$validation_workflow" 'container: ${{ matrix.image }}' "validation runs inside distribution containers"
@@ -46,6 +49,7 @@ else
   pages_workflow=
 fi
 assert_contains "$pages_workflow" "needs: validate" "Pages deployment cannot bypass validation"
+assert_contains "$pages_workflow" "safe.directory" "Pages validation trusts the container checkout directory"
 assert_contains "$pages_workflow" "actions/configure-pages@v5" "Pages configures deployment metadata"
 assert_contains "$pages_workflow" "actions/upload-pages-artifact@v4" "Pages uploads the static repository"
 assert_contains "$pages_workflow" "actions/deploy-pages@v4" "Pages deploys through the supported action"

@@ -50,16 +50,18 @@ else
 fi
 
 set +e
-root_output=$(DEV_SETUP_EFFECTIVE_UID=0 DEV_SETUP_TEST_MODE=1 \
-  "$BASH" -c "source '$REPO_ROOT/linux/dev-server/setup.sh'; require_non_root" 2>&1)
-root_status=$?
+root_status=$(DEV_SETUP_EFFECTIVE_UID=0 DEV_SETUP_TEST_MODE=1 \
+  "$BASH" -c "source '$REPO_ROOT/linux/dev-server/setup.sh'; require_privileges" 2>&1)
+root_exit=$?
 set -e
-if [[ $root_status -ne 0 ]]; then
-  pass "rejects root execution"
-else
-  fail "rejects root execution"
-fi
-assert_contains "$root_output" "Run this script as a non-root user" "explains root rejection"
+assert_eq 0 "$root_exit" "root execution does not require sudo"
+assert_not_contains "$root_status" "sudo is required" "root execution skips the sudo requirement"
+
+root_commands=$(DEV_SETUP_EFFECTIVE_UID=0 DEV_SETUP_TEST_MODE=1 \
+  DEV_SETUP_COMMAND_LOG="$TEST_TMP/root-commands.log" \
+  "$BASH" -c "source '$REPO_ROOT/linux/dev-server/setup.sh'; run_privileged sudo apt-get update; cat '$TEST_TMP/root-commands.log'")
+assert_not_contains "$root_commands" "sudo apt-get update" "root system commands do not invoke sudo"
+assert_contains "$root_commands" "apt-get update" "root system commands still run directly"
 
 DEV_SETUP_COMMAND_LOG="$TEST_TMP/commands.log"
 export DEV_SETUP_COMMAND_LOG DEV_SETUP_DPKG_ARCH=amd64
@@ -238,6 +240,15 @@ export DEV_SETUP_DOCKER_MEMBER=0 DEV_SETUP_DOCKER_GROUP_EXISTS=1
 docker_output=$(configure_docker_access <<<"y")
 assert_contains "$docker_output" "docker group grants root-level privileges" "Docker setup discloses root-equivalent access"
 assert_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "usermod -aG docker tester" "confirmed Docker setup adds only the invoking user"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+DEV_SETUP_EFFECTIVE_UID=0
+DEV_SETUP_USER=root
+root_docker_output=$(configure_docker_access <<<"y")
+assert_contains "$root_docker_output" "Docker access is already available" "root Docker access does not need group changes"
+assert_not_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "usermod -aG docker" "root Docker setup does not modify group membership"
+DEV_SETUP_EFFECTIVE_UID=$EUID
+DEV_SETUP_USER=tester
 
 : >"$DEV_SETUP_COMMAND_LOG"
 configure_node_default <<<"y"

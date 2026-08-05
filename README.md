@@ -28,12 +28,15 @@ It installs the latest stable versions available from supported sources:
 - Debian, Ubuntu, a compatible Debian-family distribution, Arch Linux, or a
   compatible Arch-family distribution
 - Bash 4.4 or newer
-- A non-root user with working `sudo` access
+- A user account with working `sudo` access, or root
 - An internet connection
 
-Do not run the script as root. It requests `sudo` only for system packages,
-repository configuration, the Docker service, and an optional group change.
-User tools are installed into the invoking user's home directory.
+Running as root is supported. Root runs system operations directly, installs
+user tools into root's home directory, and skips the Docker group change because
+root already has Docker access. A non-root invocation requests `sudo` only for
+system packages, repository configuration, the Docker service, and an optional
+group change. In either mode, user tools are installed into the invoking user's
+home directory.
 
 ### Run it
 
@@ -84,8 +87,9 @@ The wizard asks separately whether to:
 Existing Git identity and authentication are preserved unless you explicitly
 choose to change them. Membership in the docker group grants root-level privileges.
 The script displays that warning and requires confirmation before
-changing group membership. Log out and back in afterward for the group change
-to take effect.
+changing group membership. Root runs skip this group change because Docker is
+already available. Log out and back in afterward for a non-root group change to
+take effect.
 
 ### Verify the installation
 

@@ -48,6 +48,19 @@ run() {
   [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] || "$@"
 }
 
+run_privileged() {
+  local -a command=("$@")
+  if [[ "${command[0]:-}" == sudo ]]; then
+    command=("${command[@]:1}")
+  fi
+  if [[ "$DEV_SETUP_EFFECTIVE_UID" -ne 0 ]]; then
+    command=(sudo "${command[@]}")
+  fi
+  record_command "${command[@]}"
+
+  [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] || "${command[@]}"
+}
+
 install_root_file() {
   local source_url=$1 destination=$2 mode=${3:-0644} temporary_file install_status
   record_command curl -fsSL "$source_url"
@@ -60,7 +73,7 @@ install_root_file() {
     die "Failed to download $source_url"
     return 1
   fi
-  if sudo install -m "$mode" "$temporary_file" "$destination"; then
+  if run_privileged sudo install -m "$mode" "$temporary_file" "$destination"; then
     install_status=0
   else
     install_status=$?
@@ -73,7 +86,7 @@ write_root_file() {
   local destination=$1 content=$2
   record_command write-root-file "$destination" "$content"
   [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] && return 0
-  printf '%s\n' "$content" | sudo tee "$destination" >/dev/null
+  printf '%s\n' "$content" | run_privileged sudo tee "$destination" >/dev/null
 }
 
 detect_platform() {
@@ -96,15 +109,15 @@ detect_platform() {
   esac
 }
 
-require_non_root() {
-  [[ "$DEV_SETUP_EFFECTIVE_UID" -ne 0 ]] ||
-    die "Run this script as a non-root user; the script will request sudo when needed."
+require_privileges() {
+  if [[ "$DEV_SETUP_EFFECTIVE_UID" -ne 0 ]]; then
+    command -v sudo >/dev/null || die "sudo is required when not running as root."
+  fi
 }
 
 require_supported_host() {
   [[ "$(uname -s)" == Linux ]] || die "Only Linux is supported."
-  require_non_root
-  command -v sudo >/dev/null || die "sudo is required."
+  require_privileges
   detect_platform
 }
 
@@ -114,7 +127,7 @@ configure_github_cli_apt() {
     architecture=$(dpkg --print-architecture)
   fi
 
-  run sudo install -m 0755 -d /etc/apt/keyrings /etc/apt/sources.list.d
+  run_privileged sudo install -m 0755 -d /etc/apt/keyrings /etc/apt/sources.list.d
   install_root_file \
     https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     /etc/apt/keyrings/githubcli-archive-keyring.gpg 0644
@@ -148,7 +161,7 @@ configure_docker_apt() {
     architecture=$(dpkg --print-architecture)
   fi
 
-  run sudo install -m 0755 -d /etc/apt/keyrings /etc/apt/sources.list.d
+  run_privileged sudo install -m 0755 -d /etc/apt/keyrings /etc/apt/sources.list.d
   install_root_file \
     "https://download.docker.com/linux/$docker_apt_distro/gpg" \
     /etc/apt/keyrings/docker.asc 0644
@@ -177,25 +190,25 @@ remove_conflicting_docker_packages() {
   [[ -n "$conflicts" ]] || return 0
 
   read -r -a packages <<<"$conflicts"
-  run sudo apt-get remove -y "${packages[@]}"
+  run_privileged sudo apt-get remove -y "${packages[@]}"
 }
 
 install_debian_packages() {
-  run sudo apt-get update
-  run sudo apt-get install -y ca-certificates curl git gnupg unzip build-essential
+  run_privileged sudo apt-get update
+  run_privileged sudo apt-get install -y ca-certificates curl git gnupg unzip build-essential
   remove_conflicting_docker_packages
   configure_github_cli_apt
   configure_docker_apt
-  run sudo apt-get update
-  run sudo apt-get install -y gh docker-ce docker-ce-cli containerd.io \
+  run_privileged sudo apt-get update
+  run_privileged sudo apt-get install -y gh docker-ce docker-ce-cli containerd.io \
     docker-buildx-plugin docker-compose-plugin
-  run sudo systemctl enable --now docker.service
+  run_privileged sudo systemctl enable --now docker.service
 }
 
 install_arch_packages() {
-  run sudo pacman -Syu --noconfirm --needed \
+  run_privileged sudo pacman -Syu --noconfirm --needed \
     base-devel ca-certificates curl git unzip github-cli docker docker-buildx docker-compose
-  run sudo systemctl enable --now docker.service
+  run_privileged sudo systemctl enable --now docker.service
 }
 
 install_system_packages() {
@@ -441,6 +454,12 @@ docker_group_exists() {
 }
 
 configure_docker_access() {
+  if [[ "$DEV_SETUP_EFFECTIVE_UID" -eq 0 ]]; then
+    log "Running as root; Docker access is already available."
+    WIZARD_DOCKER_STATUS=already-available
+    return 0
+  fi
+
   if docker_user_is_member; then
     log "$DEV_SETUP_USER already belongs to the docker group."
     WIZARD_DOCKER_STATUS=already-configured
@@ -449,8 +468,8 @@ configure_docker_access() {
 
   printf 'Membership in the docker group grants root-level privileges.\n'
   if confirm "Allow $DEV_SETUP_USER to run Docker without sudo?"; then
-    docker_group_exists || run sudo groupadd docker
-    run sudo usermod -aG docker "$DEV_SETUP_USER"
+    docker_group_exists || run_privileged sudo groupadd docker
+    run_privileged sudo usermod -aG docker "$DEV_SETUP_USER"
     DOCKER_LOGOUT_REQUIRED=1
     WIZARD_DOCKER_STATUS=configured
   else
