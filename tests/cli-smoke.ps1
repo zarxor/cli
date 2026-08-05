@@ -80,3 +80,5 @@ try {
     $server.Dispose()
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+exit 0
