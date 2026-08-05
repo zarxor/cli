@@ -25,4 +25,23 @@ assert_contains "$readme" "Arch" "README documents Arch support"
 assert_contains "$readme" "rerun" "README documents update behavior on reruns"
 assert_contains "$readme" "docker group grants root-level privileges" "README documents Docker's security impact"
 
+if [[ -f .github/workflows/validate.yml ]]; then
+  validation_workflow=$(<.github/workflows/validate.yml)
+else
+  validation_workflow=
+fi
+assert_contains "$validation_workflow" "actions/checkout@v6" "validation checks out the repository"
+assert_contains "$validation_workflow" "shellcheck --severity=warning" "validation enforces ShellCheck warnings"
+assert_contains "$validation_workflow" "bash tests/run.bash" "validation runs behavioral tests"
+
+if [[ -f .github/workflows/pages.yml ]]; then
+  pages_workflow=$(<.github/workflows/pages.yml)
+else
+  pages_workflow=
+fi
+assert_contains "$pages_workflow" "needs: validate" "Pages deployment cannot bypass validation"
+assert_contains "$pages_workflow" "actions/configure-pages@v5" "Pages configures deployment metadata"
+assert_contains "$pages_workflow" "actions/upload-pages-artifact@v4" "Pages uploads the static repository"
+assert_contains "$pages_workflow" "actions/deploy-pages@v4" "Pages deploys through the supported action"
+
 finish_tests

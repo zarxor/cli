@@ -1,0 +1,32 @@
+name: Validate scripts
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Validate Bash syntax
+        run: bash -n linux/dev-server/setup.sh tests/*.bash
+
+      - name: Run ShellCheck
+        run: shellcheck --severity=warning linux/dev-server/setup.sh tests/*.bash
+
+      - name: Run behavioral and publication tests
+        run: bash tests/run.bash
+
+      - name: Check whitespace
+        run: git diff --check
