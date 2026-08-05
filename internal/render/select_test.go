@@ -50,6 +50,19 @@ func TestNumberedSelectionKeepsDefaultsOnEmptyInput(t *testing.T) {
 	}
 }
 
+func TestNumberedSelectionRejectsMalformedNonblankInput(t *testing.T) {
+	for _, input := range []string{",", "1,", ",1", "1,,1"} {
+		t.Run(input, func(t *testing.T) {
+			selection := render.NewNumberedSelection(strings.NewReader(input+"\n"), &bytes.Buffer{})
+			items := []render.Item{{Tool: tools.Tool{ID: profile.Git}, Selected: true}}
+
+			if _, err := selection.Select(context.Background(), items); err == nil {
+				t.Fatalf("Select() error = nil for malformed input %q", input)
+			}
+		})
+	}
+}
+
 func TestVersionTableAlignsCurrentAndCandidateVersions(t *testing.T) {
 	var output bytes.Buffer
 	rows := []render.VersionRow{

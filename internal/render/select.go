@@ -71,9 +71,11 @@ func (s *NumberedSelection) Select(ctx context.Context, items []Item) ([]tools.T
 	}
 
 	toggled := make(map[int]struct{})
-	for _, value := range strings.FieldsFunc(strings.TrimSpace(line), func(r rune) bool {
-		return r == ',' || r == ' ' || r == '\t'
-	}) {
+	values, err := selectionValues(line)
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range values {
 		number, parseErr := strconv.Atoi(value)
 		if parseErr != nil || number < 1 || number > len(items) {
 			return nil, fmt.Errorf("invalid selection %q: enter numbers from 1 to %d", value, len(items))
@@ -92,6 +94,22 @@ func (s *NumberedSelection) Select(ctx context.Context, items []Item) ([]tools.T
 		}
 	}
 	return ids, nil
+}
+
+func selectionValues(line string) ([]string, error) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil, nil
+	}
+	var values []string
+	for _, group := range strings.Split(line, ",") {
+		fields := strings.Fields(group)
+		if len(fields) == 0 {
+			return nil, fmt.Errorf("invalid selection %q: use comma-separated numbers", line)
+		}
+		values = append(values, fields...)
+	}
+	return values, nil
 }
 
 var _ SelectionUI = (*NumberedSelection)(nil)

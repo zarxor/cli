@@ -149,6 +149,50 @@ func TestDryRunRendersWithoutCallingAdapter(t *testing.T) {
 	}
 }
 
+func TestRunStopsBeforeMutationWhenPlanRenderingFails(t *testing.T) {
+	wantErr := errors.New("writer failed")
+	writer := &failingWriter{failAt: 0, err: wantErr}
+	adapter := &fixtureAdapter{}
+
+	summary := install.Run(context.Background(), install.Install, []install.ToolStatus{{Tool: mustTool(t, profile.Git)}}, fixtureAdapters(adapter), install.Options{Yes: true, Writer: writer})
+
+	if !summary.Failed || len(adapter.calls) != 0 {
+		t.Fatalf("Run() = %#v, adapter calls = %v; want render failure before mutation", summary, adapter.calls)
+	}
+	if len(summary.Results) != 1 || !errors.Is(summary.Results[0].Err, wantErr) {
+		t.Fatalf("results = %#v, want writer error", summary.Results)
+	}
+}
+
+func TestDryRunReportsResultRenderingFailure(t *testing.T) {
+	wantErr := errors.New("writer failed")
+	writer := &failingWriter{failAt: 1, err: wantErr}
+	adapter := &fixtureAdapter{}
+
+	summary := install.Run(context.Background(), install.Install, []install.ToolStatus{{Tool: mustTool(t, profile.Git)}}, fixtureAdapters(adapter), install.Options{Yes: true, DryRun: true, Writer: writer})
+
+	if !summary.Failed || len(adapter.calls) != 0 {
+		t.Fatalf("Run() = %#v, adapter calls = %v; want dry-run render failure", summary, adapter.calls)
+	}
+	if len(summary.Results) != 1 || !errors.Is(summary.Results[0].Err, wantErr) {
+		t.Fatalf("results = %#v, want writer error", summary.Results)
+	}
+}
+
+func TestEmptyPlanReportsVersionTableRenderingFailure(t *testing.T) {
+	wantErr := errors.New("writer failed")
+	writer := &failingWriter{failAt: 0, err: wantErr}
+
+	summary := install.Run(context.Background(), install.Update, []install.ToolStatus{{Tool: mustTool(t, profile.Git)}}, fixtureAdapters(&fixtureAdapter{}), install.Options{Writer: writer})
+
+	if !summary.Failed {
+		t.Fatalf("Run() = %#v, want empty-plan render failure", summary)
+	}
+	if len(summary.Results) != 1 || !errors.Is(summary.Results[0].Err, wantErr) {
+		t.Fatalf("results = %#v, want writer error", summary.Results)
+	}
+}
+
 func TestRunExecutesDuplicateToolsOnlyOnce(t *testing.T) {
 	adapter := &fixtureAdapter{}
 	git := mustTool(t, profile.Git)
@@ -183,6 +227,39 @@ func TestUpdateSkipsToolAlreadyAtCandidateVersion(t *testing.T) {
 	}
 	if len(summary.Results) != 1 || summary.Results[0].Status != "up-to-date" {
 		t.Fatalf("results = %#v, want up-to-date", summary.Results)
+	}
+}
+
+func TestUpdateNormalizesAdapterShapedVersionsBeforeLatestNoOp(t *testing.T) {
+	cases := []struct {
+		name      string
+		current   string
+		candidate string
+	}{
+		{name: "command prefix", current: "git version 2.49.0", candidate: "2.49.0"},
+		{name: "Debian epoch and revision", current: "git version 2.48.0", candidate: "1:2.48.0-1"},
+		{name: "command suffix", current: "Docker version 28.1.1, build 4eba377", candidate: "28.1.1"},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := &fixtureAdapter{}
+			statuses := []install.ToolStatus{{
+				Tool:             mustTool(t, profile.Git),
+				Installed:        true,
+				CurrentVersion:   test.current,
+				CandidateVersion: test.candidate,
+			}}
+
+			summary := install.Run(context.Background(), install.Update, statuses, fixtureAdapters(adapter), install.Options{Yes: true, Writer: &bytes.Buffer{}})
+
+			if summary.Failed || len(adapter.calls) != 0 {
+				t.Fatalf("Run() = %#v, adapter calls = %v", summary, adapter.calls)
+			}
+			if len(summary.Results) != 1 || summary.Results[0].Status != "up-to-date" {
+				t.Fatalf("results = %#v, want normalized up-to-date", summary.Results)
+			}
+		})
 	}
 }
 
@@ -231,11 +308,43 @@ func TestRunMarksVerificationFailureInSummary(t *testing.T) {
 	}
 }
 
+func TestRunRejectsSoleAdapterWhoseOSKeyDoesNotMatchHost(t *testing.T) {
+	host, err := platform.Detect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongOS := platform.Debian
+	if host == wrongOS {
+		wrongOS = platform.Arch
+	}
+	adapter := &fixtureAdapter{}
+
+	summary := install.Run(context.Background(), install.Install, []install.ToolStatus{{Tool: mustTool(t, profile.Git)}}, map[platform.OS]adapters.Adapter{wrongOS: adapter}, install.Options{Yes: true, Writer: &bytes.Buffer{}})
+
+	if !summary.Failed || len(adapter.calls) != 0 {
+		t.Fatalf("Run() = %#v, adapter calls = %v; want host/adapter mismatch failure", summary, adapter.calls)
+	}
+}
+
 type fixtureSelection struct {
 	selected []tools.ToolID
 	err      error
 	items    []install.Item
 	calls    int
+}
+
+type failingWriter struct {
+	writes int
+	failAt int
+	err    error
+}
+
+func (w *failingWriter) Write(value []byte) (int, error) {
+	if w.writes >= w.failAt {
+		return 0, w.err
+	}
+	w.writes++
+	return len(value), nil
 }
 
 func (s *fixtureSelection) Select(_ context.Context, items []install.Item) ([]tools.ToolID, error) {
@@ -271,7 +380,11 @@ func (a *fixtureAdapter) Verify(_ context.Context, tool tools.Tool) error {
 }
 
 func fixtureAdapters(adapter adapters.Adapter) map[platform.OS]adapters.Adapter {
-	return map[platform.OS]adapters.Adapter{platform.OS("fixture"): adapter}
+	return map[platform.OS]adapters.Adapter{
+		platform.Debian:  adapter,
+		platform.Arch:    adapter,
+		platform.Windows: adapter,
+	}
 }
 
 func mustTool(t *testing.T, id tools.ToolID) tools.Tool {

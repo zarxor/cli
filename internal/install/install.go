@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/zarxor/scripts/internal/adapters"
@@ -62,7 +63,9 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 
 	eligible := eligibleStatuses(action, statuses)
 	if len(eligible) == 0 {
-		_ = renderStatuses(writer, eligible)
+		if err := renderStatuses(writer, eligible); err != nil {
+			return failedPlan(statuses, action, fmt.Errorf("render plan: %w", err))
+		}
 		return Summary{}
 	}
 	items := selectionItems(action, eligible)
@@ -78,7 +81,9 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 			return Summary{Failed: true}
 		}
 	} else {
-		_ = renderStatuses(writer, eligible)
+		if err := renderStatuses(writer, eligible); err != nil {
+			return failedPlan(eligible, action, fmt.Errorf("render plan: %w", err))
+		}
 	}
 
 	selected := selectStatuses(eligible, selectedIDs)
@@ -99,7 +104,9 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 		for _, tool := range orderedTools {
 			resultAction := actionFor(action, selectedByID[tool.ID])
 			summary.Results = append(summary.Results, ToolResult{Tool: tool, Action: resultAction, Status: "dry-run"})
-			_, _ = fmt.Fprintf(writer, "%s %s: dry-run\n", resultAction, tool.Name)
+			if _, err := fmt.Fprintf(writer, "%s %s: dry-run\n", resultAction, tool.Name); err != nil {
+				return failedPlan(selected, action, fmt.Errorf("render dry-run result: %w", err))
+			}
 		}
 		return summary
 	}
@@ -244,7 +251,18 @@ func actionFor(requested Action, status ToolStatus) Action {
 }
 
 func versionsMatch(status ToolStatus) bool {
-	return status.CurrentVersion != "" && status.CandidateVersion != "" && status.CurrentVersion == status.CandidateVersion
+	current := canonicalVersion(status.CurrentVersion)
+	candidate := canonicalVersion(status.CandidateVersion)
+	return current != "" && candidate != "" && current == candidate
+}
+
+var numericVersion = regexp.MustCompile(`[0-9]+(?:\.[0-9]+)+`)
+
+func canonicalVersion(version string) string {
+	if numeric := numericVersion.FindString(version); numeric != "" {
+		return numeric
+	}
+	return strings.ToLower(strings.TrimSpace(version))
 }
 
 func execute(ctx context.Context, adapter adapters.Adapter, action Action, tool tools.Tool) error {
@@ -268,13 +286,6 @@ func failedDependency(tool tools.Tool, selected map[tools.ToolID]struct{}, resul
 }
 
 func hostAdapter(adapterSet map[platform.OS]adapters.Adapter) (adapters.Adapter, error) {
-	if len(adapterSet) == 1 {
-		for _, adapter := range adapterSet {
-			if adapter != nil {
-				return adapter, nil
-			}
-		}
-	}
 	host, err := platform.Detect()
 	if err == nil {
 		if adapter := adapterSet[host]; adapter != nil {
