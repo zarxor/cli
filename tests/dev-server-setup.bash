@@ -29,6 +29,7 @@ EOF
 export DEV_SETUP_TEST_MODE=1
 export DEV_SETUP_USER=tester
 export DEV_SETUP_HOME="$TEST_TMP/home"
+export DEV_SETUP_EFFECTIVE_UID=${DEV_SETUP_TEST_UID:-1000}
 mkdir -p "$DEV_SETUP_HOME"
 
 # shellcheck source=linux/dev-server/setup.sh
@@ -242,12 +243,13 @@ assert_contains "$docker_output" "docker group grants root-level privileges" "Do
 assert_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "usermod -aG docker tester" "confirmed Docker setup adds only the invoking user"
 
 : >"$DEV_SETUP_COMMAND_LOG"
+original_effective_uid=$DEV_SETUP_EFFECTIVE_UID
 DEV_SETUP_EFFECTIVE_UID=0
 DEV_SETUP_USER=root
 root_docker_output=$(configure_docker_access <<<"y")
 assert_contains "$root_docker_output" "Docker access is already available" "root Docker access does not need group changes"
 assert_not_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "usermod -aG docker" "root Docker setup does not modify group membership"
-DEV_SETUP_EFFECTIVE_UID=$EUID
+DEV_SETUP_EFFECTIVE_UID=$original_effective_uid
 DEV_SETUP_USER=tester
 
 : >"$DEV_SETUP_COMMAND_LOG"
