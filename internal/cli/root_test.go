@@ -19,6 +19,17 @@ func TestExecuteVersion(t *testing.T) {
 	}
 }
 
+func TestExecuteVersionWritesTrailingNewline(t *testing.T) {
+	output := new(bytes.Buffer)
+	err := ExecuteWithIO(context.Background(), []string{"version"}, output, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := output.String(), "Johan Bostrom CLI dev\n"; got != want {
+		t.Fatalf("version output = %q, want %q", got, want)
+	}
+}
+
 func TestExecuteHelpListsToolsAndVersion(t *testing.T) {
 	output := new(bytes.Buffer)
 	err := ExecuteWithIO(context.Background(), []string{"help"}, output, io.Discard)

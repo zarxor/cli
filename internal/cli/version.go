@@ -12,7 +12,7 @@ func newVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Print the CLI version",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "Johan Bostrom CLI %s\\n", version.Version)
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "Johan Bostrom CLI %s\n", version.Version)
 			return err
 		},
 	}

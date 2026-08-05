@@ -90,7 +90,7 @@ foreach ($target in @(
                 [System.IO.Compression.ZipFile]::ExtractToDirectory($assetPath, $extractRoot)
             }
             $output = & (Join-Path $extractRoot $target.Executable) version 2>&1 | Out-String
-            $versionPattern = '^Johan Bostrom CLI ' + [regex]::Escape($Version) + '(\\n)?$'
+            $versionPattern = '^Johan Bostrom CLI ' + [regex]::Escape($Version) + '$'
             if ($LASTEXITCODE -ne 0 -or $output.Trim() -notmatch $versionPattern) {
                 throw "Unexpected version output from $($target.Asset): $output"
             }

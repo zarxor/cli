@@ -55,7 +55,7 @@ check_target() {
       fi
       "$extract_root/$executable" version
     )
-    [[ $output == "Johan Bostrom CLI $version" || $output == "Johan Bostrom CLI $version\\n" ]] || { printf 'Unexpected version output from %s: %s\n' "$asset" "$output" >&2; return 1; }
+    [[ $output == "Johan Bostrom CLI $version" ]] || { printf 'Unexpected version output from %s: %s\n' "$asset" "$output" >&2; return 1; }
   fi
   printf 'ok - %s\n' "$asset"
 }
