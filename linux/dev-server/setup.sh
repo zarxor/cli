@@ -14,6 +14,11 @@ DISTRO_DEBIAN_CODENAME=
 CURRENT_PHASE=initialization
 DOCKER_LOGOUT_REQUIRED=0
 WIZARD_STATUS=not-run
+WIZARD_GIT_STATUS=not-run
+WIZARD_GITHUB_STATUS=not-run
+WIZARD_CODEX_STATUS=not-run
+WIZARD_DOCKER_STATUS=not-run
+WIZARD_NODE_STATUS=not-run
 
 on_error() {
   local exit_code=$?
@@ -44,7 +49,7 @@ run() {
 }
 
 install_root_file() {
-  local source_url=$1 destination=$2 mode=${3:-0644} temporary_file
+  local source_url=$1 destination=$2 mode=${3:-0644} temporary_file install_status
   record_command curl -fsSL "$source_url"
   record_command sudo install -m "$mode" downloaded-file "$destination"
   [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] && return 0
@@ -55,8 +60,13 @@ install_root_file() {
     die "Failed to download $source_url"
     return 1
   fi
-  sudo install -m "$mode" "$temporary_file" "$destination"
+  if sudo install -m "$mode" "$temporary_file" "$destination"; then
+    install_status=0
+  else
+    install_status=$?
+  fi
   rm -f "$temporary_file"
+  return "$install_status"
 }
 
 write_root_file() {
@@ -150,9 +160,25 @@ Architectures: $architecture
 Signed-By: /etc/apt/keyrings/docker.asc"
 }
 
+remove_conflicting_docker_packages() {
+  local conflicts=${DEV_SETUP_DOCKER_CONFLICTS:-}
+  local -a packages=()
+
+  if [[ -z "$conflicts" && "${DEV_SETUP_TEST_MODE:-0}" != 1 ]]; then
+    conflicts=$(dpkg --get-selections \
+      docker.io docker-compose docker-doc docker-buildx podman-docker containerd runc \
+      2>/dev/null | awk '$2 != "deinstall" && $2 != "purge" {print $1}' || true)
+  fi
+  [[ -n "$conflicts" ]] || return 0
+
+  read -r -a packages <<<"$conflicts"
+  run sudo apt-get remove -y "${packages[@]}"
+}
+
 install_debian_packages() {
   run sudo apt-get update
-  run sudo apt-get install -y ca-certificates curl git gnupg build-essential
+  run sudo apt-get install -y ca-certificates curl git gnupg unzip build-essential
+  remove_conflicting_docker_packages
   configure_github_cli_apt
   configure_docker_apt
   run sudo apt-get update
@@ -163,7 +189,7 @@ install_debian_packages() {
 
 install_arch_packages() {
   run sudo pacman -Syu --noconfirm --needed \
-    base-devel ca-certificates curl git github-cli docker docker-buildx docker-compose
+    base-devel ca-certificates curl git unzip github-cli docker docker-buildx docker-compose
   run sudo systemctl enable --now docker.service
 }
 
@@ -176,9 +202,11 @@ install_system_packages() {
 }
 
 run_user_installer() {
-  local source_url=$1 interpreter=$2 temporary_file
+  local source_url=$1 temporary_file installer_status
+  shift
+  local -a installer_command=("$@")
   record_command curl -fsSL "$source_url"
-  record_command "$interpreter" downloaded-installer
+  record_command "${installer_command[@]}" downloaded-installer
   [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] && return 0
 
   temporary_file=$(mktemp)
@@ -187,8 +215,13 @@ run_user_installer() {
     die "Failed to download $source_url"
     return 1
   fi
-  "$interpreter" "$temporary_file"
+  if "${installer_command[@]}" "$temporary_file"; then
+    installer_status=0
+  else
+    installer_status=$?
+  fi
   rm -f "$temporary_file"
+  return "$installer_status"
 }
 
 replace_profile_block() {
@@ -217,7 +250,7 @@ ensure_shell_profile() {
   replace_profile_block "$profile" paths \
     'export PATH="$HOME/.local/bin:$PATH"'
   replace_profile_block "$profile" nvm \
-    'export NVM_DIR="${XDG_CONFIG_HOME:-$HOME/.nvm}"
+    'export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"'
   replace_profile_block "$profile" bun \
@@ -244,25 +277,15 @@ resolve_nvm_version() {
 }
 
 install_or_update_nvm() {
-  local nvm_version installer_url temporary_file
+  local nvm_version installer_url
   nvm_version=$(resolve_nvm_version)
   installer_url="https://raw.githubusercontent.com/nvm-sh/nvm/$nvm_version/install.sh"
-  record_command curl -fsSL "$installer_url"
-  record_command env PROFILE=/dev/null "NVM_DIR=$DEV_SETUP_HOME/.nvm" bash downloaded-installer
-  [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] && return 0
-
-  temporary_file=$(mktemp)
-  if ! curl -fsSL "$installer_url" -o "$temporary_file"; then
-    rm -f "$temporary_file"
-    die "Failed to download $installer_url"
-    return 1
-  fi
-  PROFILE=/dev/null NVM_DIR="$DEV_SETUP_HOME/.nvm" bash "$temporary_file"
-  rm -f "$temporary_file"
+  run_user_installer "$installer_url" env PROFILE=/dev/null \
+    "NVM_DIR=$DEV_SETUP_HOME/.nvm" bash
 }
 
 load_nvm() {
-  export NVM_DIR=${XDG_CONFIG_HOME:-$DEV_SETUP_HOME/.nvm}
+  export NVM_DIR="$DEV_SETUP_HOME/.nvm"
   if [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]]; then
     return 0
   fi
@@ -286,22 +309,12 @@ install_or_update_node_tools() {
 }
 
 install_or_update_bun() {
-  local bun_bin="$DEV_SETUP_HOME/.bun/bin/bun" temporary_file
+  local bun_bin="$DEV_SETUP_HOME/.bun/bin/bun"
   if [[ "${DEV_SETUP_BUN_PRESENT:-0}" == 1 || -x "$bun_bin" ]]; then
     run "$bun_bin" upgrade --stable
   else
-    record_command curl -fsSL https://bun.sh/install
-    record_command env "BUN_INSTALL=$DEV_SETUP_HOME/.bun" bash downloaded-installer
-    if [[ "${DEV_SETUP_TEST_MODE:-0}" != 1 ]]; then
-      temporary_file=$(mktemp)
-      if ! curl -fsSL https://bun.sh/install -o "$temporary_file"; then
-        rm -f "$temporary_file"
-        die "Failed to download https://bun.sh/install"
-        return 1
-      fi
-      BUN_INSTALL="$DEV_SETUP_HOME/.bun" bash "$temporary_file"
-      rm -f "$temporary_file"
-    fi
+    run_user_installer https://bun.sh/install env \
+      "BUN_INSTALL=$DEV_SETUP_HOME/.bun" bash
   fi
   export BUN_INSTALL="$DEV_SETUP_HOME/.bun"
   export PATH="$BUN_INSTALL/bin:$PATH"
@@ -324,6 +337,7 @@ confirm() {
 
 configure_git_identity() {
   local current_name current_email new_name new_email
+  WIZARD_GIT_STATUS=skipped
   current_name=${DEV_SETUP_GIT_NAME:-$(git config --global --get user.name 2>/dev/null || true)}
   current_email=${DEV_SETUP_GIT_EMAIL:-$(git config --global --get user.email 2>/dev/null || true)}
   printf 'Current Git name: %s\n' "${current_name:-not set}"
@@ -345,6 +359,7 @@ configure_git_identity() {
   if confirm "Save this Git identity?"; then
     run git config --global user.name "$new_name"
     run git config --global user.email "$new_email"
+    WIZARD_GIT_STATUS=configured
   fi
 }
 
@@ -359,9 +374,19 @@ github_is_authenticated() {
 configure_github_auth() {
   if github_is_authenticated; then
     log "GitHub CLI is already authenticated."
-    confirm "Reauthenticate GitHub CLI?" && run gh auth login
+    if confirm "Reauthenticate GitHub CLI?"; then
+      run gh auth login
+      WIZARD_GITHUB_STATUS=authenticated
+    else
+      WIZARD_GITHUB_STATUS=preserved
+    fi
   else
-    confirm "Authenticate GitHub CLI?" && run gh auth login
+    if confirm "Authenticate GitHub CLI?"; then
+      run gh auth login
+      WIZARD_GITHUB_STATUS=authenticated
+    else
+      WIZARD_GITHUB_STATUS=skipped
+    fi
   fi
   return 0
 }
@@ -377,9 +402,19 @@ codex_is_authenticated() {
 configure_codex_auth() {
   if codex_is_authenticated; then
     log "Codex is already authenticated."
-    confirm "Reauthenticate Codex?" && run codex login
+    if confirm "Reauthenticate Codex?"; then
+      run codex login
+      WIZARD_CODEX_STATUS=authenticated
+    else
+      WIZARD_CODEX_STATUS=preserved
+    fi
   else
-    confirm "Authenticate Codex?" && run codex login
+    if confirm "Authenticate Codex?"; then
+      run codex login
+      WIZARD_CODEX_STATUS=authenticated
+    else
+      WIZARD_CODEX_STATUS=skipped
+    fi
   fi
   return 0
 }
@@ -403,6 +438,7 @@ docker_group_exists() {
 configure_docker_access() {
   if docker_user_is_member; then
     log "$DEV_SETUP_USER already belongs to the docker group."
+    WIZARD_DOCKER_STATUS=already-configured
     return 0
   fi
 
@@ -411,6 +447,9 @@ configure_docker_access() {
     docker_group_exists || run sudo groupadd docker
     run sudo usermod -aG docker "$DEV_SETUP_USER"
     DOCKER_LOGOUT_REQUIRED=1
+    WIZARD_DOCKER_STATUS=configured
+  else
+    WIZARD_DOCKER_STATUS=skipped
   fi
 }
 
@@ -420,14 +459,23 @@ configure_node_default() {
     active_version=$(nvm current)
   fi
   printf 'Active Node.js LTS: %s\n' "$active_version"
-  confirm "Use the latest Node.js LTS as nvm's default?" &&
+  if confirm "Use the latest Node.js LTS as nvm's default?"; then
     run nvm alias default 'lts/*'
+    WIZARD_NODE_STATUS=configured
+  else
+    WIZARD_NODE_STATUS=skipped
+  fi
   return 0
 }
 
 run_wizard() {
   if ! confirm "Installation finished. Start the optional setup wizard?"; then
     WIZARD_STATUS=skipped
+    WIZARD_GIT_STATUS=skipped
+    WIZARD_GITHUB_STATUS=skipped
+    WIZARD_CODEX_STATUS=skipped
+    WIZARD_DOCKER_STATUS=skipped
+    WIZARD_NODE_STATUS=skipped
     log "Setup wizard skipped."
     return 0
   fi
@@ -470,6 +518,13 @@ verify_tools() {
 
 print_summary() {
   printf '[dev-setup] Wizard: %s.\n' "$WIZARD_STATUS"
+  if [[ "$WIZARD_STATUS" == completed ]]; then
+    printf '[dev-setup] Git identity: %s.\n' "$WIZARD_GIT_STATUS"
+    printf '[dev-setup] GitHub authentication: %s.\n' "$WIZARD_GITHUB_STATUS"
+    printf '[dev-setup] Codex authentication: %s.\n' "$WIZARD_CODEX_STATUS"
+    printf '[dev-setup] Docker access: %s.\n' "$WIZARD_DOCKER_STATUS"
+    printf '[dev-setup] Node.js default: %s.\n' "$WIZARD_NODE_STATUS"
+  fi
   if [[ "$DOCKER_LOGOUT_REQUIRED" == 1 ]]; then
     printf '[dev-setup] Log out and back in before using Docker without sudo.\n'
   fi

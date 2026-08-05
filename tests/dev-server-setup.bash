@@ -67,12 +67,15 @@ export DEV_SETUP_COMMAND_LOG DEV_SETUP_DPKG_ARCH=amd64
 : >"$DEV_SETUP_COMMAND_LOG"
 OS_RELEASE_FILE="$TEST_TMP/debian-os-release"
 detect_platform
+export DEV_SETUP_DOCKER_CONFLICTS="docker.io containerd"
 install_system_packages
+unset DEV_SETUP_DOCKER_CONFLICTS
 debian_commands=$(<"$DEV_SETUP_COMMAND_LOG")
 assert_contains "$debian_commands" "apt-get update" "Debian refreshes apt metadata"
-assert_contains "$debian_commands" "apt-get install -y ca-certificates curl git gnupg build-essential" "Debian installs base development packages"
+assert_contains "$debian_commands" "apt-get install -y ca-certificates curl git gnupg unzip build-essential" "Debian installs base development packages and Bun's unzip prerequisite"
 assert_contains "$debian_commands" "https://cli.github.com/packages/githubcli-archive-keyring.gpg" "Debian configures the GitHub CLI repository"
 assert_contains "$debian_commands" "https://download.docker.com/linux/debian/gpg" "Debian configures Docker's repository"
+assert_contains "$debian_commands" "apt-get remove -y docker.io containerd" "Debian removes only installed packages that conflict with Docker CE"
 assert_contains "$debian_commands" "docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "Debian converges Docker packages"
 
 : >"$DEV_SETUP_COMMAND_LOG"
@@ -80,7 +83,7 @@ OS_RELEASE_FILE="$TEST_TMP/arch-os-release"
 detect_platform
 install_system_packages
 arch_commands=$(<"$DEV_SETUP_COMMAND_LOG")
-assert_contains "$arch_commands" "pacman -Syu --noconfirm --needed base-devel ca-certificates curl git github-cli docker docker-buildx docker-compose" "Arch performs a supported full-system package transaction"
+assert_contains "$arch_commands" "pacman -Syu --noconfirm --needed base-devel ca-certificates curl git unzip github-cli docker docker-buildx docker-compose" "Arch performs a supported transaction with Bun's unzip prerequisite"
 assert_contains "$arch_commands" "systemctl enable --now docker.service" "Arch enables Docker"
 
 : >"$DEV_SETUP_COMMAND_LOG"
@@ -108,6 +111,45 @@ assert_contains "$user_tool_commands" "corepack enable" "Corepack shims are enab
 assert_contains "$user_tool_commands" "corepack prepare pnpm@latest --activate" "pnpm activates its latest stable release"
 assert_contains "$user_tool_commands" "corepack prepare yarn@stable --activate" "Yarn activates its stable release"
 
+mkdir -p "$TEST_TMP/installer-tmp"
+cat >"$TEST_TMP/success-installer.bash" <<'EOF'
+#!/usr/bin/env bash
+printf 'installer executed\n' >"$DEV_SETUP_INSTALLER_MARKER"
+EOF
+cat >"$TEST_TMP/failing-installer.bash" <<'EOF'
+#!/usr/bin/env bash
+exit 23
+EOF
+curl() {
+  local output='' argument
+  while (($# > 0)); do
+    argument=$1
+    shift
+    if [[ "$argument" == -o ]]; then
+      output=$1
+      shift
+    fi
+  done
+  cp "$DEV_SETUP_FIXTURE_INSTALLER" "$output"
+}
+export -f curl
+
+export DEV_SETUP_INSTALLER_MARKER="$TEST_TMP/installer.marker"
+export DEV_SETUP_FIXTURE_INSTALLER="$TEST_TMP/success-installer.bash"
+DEV_SETUP_TEST_MODE=0 TMPDIR="$TEST_TMP/installer-tmp" "$BASH" -c \
+  "source '$REPO_ROOT/linux/dev-server/setup.sh'; run_user_installer https://fixture.invalid/install bash"
+assert_eq "installer executed" "$(<"$DEV_SETUP_INSTALLER_MARKER")" "downloaded installers are executed rather than only logged"
+
+export DEV_SETUP_FIXTURE_INSTALLER="$TEST_TMP/failing-installer.bash"
+set +e
+DEV_SETUP_TEST_MODE=0 TMPDIR="$TEST_TMP/installer-tmp" "$BASH" -c \
+  "source '$REPO_ROOT/linux/dev-server/setup.sh'; run_user_installer https://fixture.invalid/install bash"
+installer_failure_status=$?
+set -e
+assert_eq 23 "$installer_failure_status" "installer failures propagate their original exit status"
+installer_temp_count=$(find "$TEST_TMP/installer-tmp" -type f | wc -l | tr -d ' ')
+assert_eq 0 "$installer_temp_count" "temporary installer files are removed after failures"
+
 : >"$DEV_SETUP_COMMAND_LOG"
 rm -rf "$DEV_SETUP_HOME/.bun"
 install_or_update_bun
@@ -131,6 +173,14 @@ profile_content=$(<"$DEV_SETUP_HOME/.bashrc")
 assert_count 1 "$profile_content" "# >>> johanbostrom dev setup: nvm >>>" "reruns keep one nvm profile block"
 assert_count 1 "$profile_content" "# >>> johanbostrom dev setup: bun >>>" "reruns keep one Bun profile block"
 
+export XDG_CONFIG_HOME="$TEST_TMP/xdg"
+load_nvm
+assert_eq "$DEV_SETUP_HOME/.nvm" "$NVM_DIR" "nvm loads from the same directory used by its installer when XDG is set"
+ensure_shell_profile
+profile_content=$(<"$DEV_SETUP_HOME/.bashrc")
+assert_contains "$profile_content" 'export NVM_DIR="$HOME/.nvm"' "future shells use the canonical nvm installation directory"
+unset XDG_CONFIG_HOME
+
 : >"$DEV_SETUP_COMMAND_LOG"
 export DEV_SETUP_GIT_NAME="Existing User" DEV_SETUP_GIT_EMAIL="existing@example.com"
 export DEV_SETUP_GH_AUTHENTICATED=0 DEV_SETUP_CODEX_AUTHENTICATED=0
@@ -148,6 +198,12 @@ n
 n
 EOF
 assert_eq "" "$(<"$DEV_SETUP_COMMAND_LOG")" "every wizard step can be skipped independently"
+skipped_wizard_summary=$(print_summary)
+assert_contains "$skipped_wizard_summary" "Git identity: skipped" "summary reports skipped Git identity setup"
+assert_contains "$skipped_wizard_summary" "GitHub authentication: skipped" "summary reports skipped GitHub authentication"
+assert_contains "$skipped_wizard_summary" "Codex authentication: skipped" "summary reports skipped Codex authentication"
+assert_contains "$skipped_wizard_summary" "Docker access: skipped" "summary reports skipped Docker access"
+assert_contains "$skipped_wizard_summary" "Node.js default: skipped" "summary reports skipped Node.js default setup"
 
 : >"$DEV_SETUP_COMMAND_LOG"
 git_identity_output=$(configure_git_identity <<<"n")

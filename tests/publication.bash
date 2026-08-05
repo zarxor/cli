@@ -33,6 +33,9 @@ fi
 assert_contains "$validation_workflow" "actions/checkout@v6" "validation checks out the repository"
 assert_contains "$validation_workflow" "shellcheck --severity=warning" "validation enforces ShellCheck warnings"
 assert_contains "$validation_workflow" "bash tests/run.bash" "validation runs behavioral tests"
+assert_contains "$validation_workflow" 'container: ${{ matrix.image }}' "validation runs inside distribution containers"
+assert_contains "$validation_workflow" "debian:bookworm-slim" "validation covers a minimal Debian host"
+assert_contains "$validation_workflow" "archlinux:base" "validation covers a minimal Arch host"
 
 if [[ -f .github/workflows/pages.yml ]]; then
   pages_workflow=$(<.github/workflows/pages.yml)
@@ -43,5 +46,8 @@ assert_contains "$pages_workflow" "needs: validate" "Pages deployment cannot byp
 assert_contains "$pages_workflow" "actions/configure-pages@v5" "Pages configures deployment metadata"
 assert_contains "$pages_workflow" "actions/upload-pages-artifact@v4" "Pages uploads the static repository"
 assert_contains "$pages_workflow" "actions/deploy-pages@v4" "Pages deploys through the supported action"
+assert_contains "$pages_workflow" 'container: ${{ matrix.image }}' "Pages validation uses the distribution matrix"
+assert_contains "$pages_workflow" "debian:bookworm-slim" "Pages is gated by Debian validation"
+assert_contains "$pages_workflow" "archlinux:base" "Pages is gated by Arch validation"
 
 finish_tests

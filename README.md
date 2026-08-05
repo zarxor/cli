@@ -66,6 +66,11 @@ upgrades. Debian-family systems use apt and supported GitHub CLI and Docker
 repositories. A Debian derivative must declare a compatible Debian or Ubuntu
 codename that exists in Docker's repository.
 
+When migrating to Docker's official packages on Debian-family systems, the
+script removes only installed packages that conflict with Docker CE (such as
+`docker.io`, `containerd`, or `runc`). Docker images, volumes, networks, and
+configuration under `/var/lib/docker` are not deleted.
+
 ### Optional setup wizard
 
 The wizard asks separately whether to:
