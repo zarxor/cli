@@ -21,13 +21,40 @@ die() {
   return 1
 }
 
-run() {
+record_command() {
   if [[ -n "${DEV_SETUP_COMMAND_LOG:-}" ]]; then
     printf '%q ' "$@" >>"$DEV_SETUP_COMMAND_LOG"
     printf '\n' >>"$DEV_SETUP_COMMAND_LOG"
   fi
+}
+
+run() {
+  record_command "$@"
 
   [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] || "$@"
+}
+
+install_root_file() {
+  local source_url=$1 destination=$2 mode=${3:-0644} temporary_file
+  record_command curl -fsSL "$source_url"
+  record_command sudo install -m "$mode" downloaded-file "$destination"
+  [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] && return 0
+
+  temporary_file=$(mktemp)
+  if ! curl -fsSL "$source_url" -o "$temporary_file"; then
+    rm -f "$temporary_file"
+    die "Failed to download $source_url"
+    return 1
+  fi
+  sudo install -m "$mode" "$temporary_file" "$destination"
+  rm -f "$temporary_file"
+}
+
+write_root_file() {
+  local destination=$1 content=$2
+  record_command write-root-file "$destination" "$content"
+  [[ "${DEV_SETUP_TEST_MODE:-0}" == 1 ]] && return 0
+  printf '%s\n' "$content" | sudo tee "$destination" >/dev/null
 }
 
 detect_platform() {
@@ -60,6 +87,83 @@ require_supported_host() {
   require_non_root
   command -v sudo >/dev/null || die "sudo is required."
   detect_platform
+}
+
+configure_github_cli_apt() {
+  local architecture=${DEV_SETUP_DPKG_ARCH:-}
+  if [[ -z "$architecture" ]]; then
+    architecture=$(dpkg --print-architecture)
+  fi
+
+  run sudo install -m 0755 -d /etc/apt/keyrings /etc/apt/sources.list.d
+  install_root_file \
+    https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    /etc/apt/keyrings/githubcli-archive-keyring.gpg 0644
+  write_root_file /etc/apt/sources.list.d/github-cli.list \
+    "deb [arch=$architecture signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main"
+}
+
+configure_docker_apt() {
+  local docker_apt_distro docker_apt_codename architecture=${DEV_SETUP_DPKG_ARCH:-}
+
+  case " $DISTRO_ID $DISTRO_ID_LIKE " in
+    *" ubuntu "*)
+      docker_apt_distro=ubuntu
+      docker_apt_codename=${DISTRO_UBUNTU_CODENAME:-$DISTRO_VERSION_CODENAME}
+      ;;
+    *" debian "*)
+      docker_apt_distro=debian
+      docker_apt_codename=${DISTRO_DEBIAN_CODENAME:-$DISTRO_VERSION_CODENAME}
+      ;;
+    *)
+      die "Docker's official apt repository is not mapped for distribution '$DISTRO_ID'."
+      return 1
+      ;;
+  esac
+
+  [[ -n "$docker_apt_codename" ]] || {
+    die "No compatible Docker apt codename is declared by '$DISTRO_ID'."
+    return 1
+  }
+  if [[ -z "$architecture" ]]; then
+    architecture=$(dpkg --print-architecture)
+  fi
+
+  run sudo install -m 0755 -d /etc/apt/keyrings /etc/apt/sources.list.d
+  install_root_file \
+    "https://download.docker.com/linux/$docker_apt_distro/gpg" \
+    /etc/apt/keyrings/docker.asc 0644
+  write_root_file /etc/apt/sources.list.d/docker.sources "Types: deb
+URIs: https://download.docker.com/linux/$docker_apt_distro
+Suites: $docker_apt_codename
+Components: stable
+Architectures: $architecture
+Signed-By: /etc/apt/keyrings/docker.asc"
+}
+
+install_debian_packages() {
+  run sudo apt-get update
+  run sudo apt-get install -y ca-certificates curl git gnupg build-essential
+  configure_github_cli_apt
+  configure_docker_apt
+  run sudo apt-get update
+  run sudo apt-get install -y gh docker-ce docker-ce-cli containerd.io \
+    docker-buildx-plugin docker-compose-plugin
+  run sudo systemctl enable --now docker.service
+}
+
+install_arch_packages() {
+  run sudo pacman -Syu --noconfirm --needed \
+    base-devel ca-certificates curl git github-cli docker docker-buildx docker-compose
+  run sudo systemctl enable --now docker.service
+}
+
+install_system_packages() {
+  case "$PLATFORM" in
+    debian) install_debian_packages ;;
+    arch) install_arch_packages ;;
+    *) die "Platform detection must run before package installation." ;;
+  esac
 }
 
 main() {

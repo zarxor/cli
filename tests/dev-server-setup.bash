@@ -61,4 +61,35 @@ else
 fi
 assert_contains "$root_output" "Run this script as a non-root user" "explains root rejection"
 
+DEV_SETUP_COMMAND_LOG="$TEST_TMP/commands.log"
+export DEV_SETUP_COMMAND_LOG DEV_SETUP_DPKG_ARCH=amd64
+
+: >"$DEV_SETUP_COMMAND_LOG"
+OS_RELEASE_FILE="$TEST_TMP/debian-os-release"
+detect_platform
+install_system_packages
+debian_commands=$(<"$DEV_SETUP_COMMAND_LOG")
+assert_contains "$debian_commands" "apt-get update" "Debian refreshes apt metadata"
+assert_contains "$debian_commands" "apt-get install -y ca-certificates curl git gnupg build-essential" "Debian installs base development packages"
+assert_contains "$debian_commands" "https://cli.github.com/packages/githubcli-archive-keyring.gpg" "Debian configures the GitHub CLI repository"
+assert_contains "$debian_commands" "https://download.docker.com/linux/debian/gpg" "Debian configures Docker's repository"
+assert_contains "$debian_commands" "docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "Debian converges Docker packages"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+OS_RELEASE_FILE="$TEST_TMP/arch-os-release"
+detect_platform
+install_system_packages
+arch_commands=$(<"$DEV_SETUP_COMMAND_LOG")
+assert_contains "$arch_commands" "pacman -Syu --noconfirm --needed base-devel ca-certificates curl git github-cli docker docker-buildx docker-compose" "Arch performs a supported full-system package transaction"
+assert_contains "$arch_commands" "systemctl enable --now docker.service" "Arch enables Docker"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+OS_RELEASE_FILE="$TEST_TMP/debian-os-release"
+detect_platform
+install_system_packages
+install_system_packages
+rerun_commands=$(<"$DEV_SETUP_COMMAND_LOG")
+assert_not_contains "$rerun_commands" "tee -a" "reruns never append repository definitions"
+assert_not_contains "$rerun_commands" ">>" "reruns never duplicate repository definitions"
+
 finish_tests

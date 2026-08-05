@@ -29,6 +29,15 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local haystack=$1 needle=$2 message=$3
+  if [[ "$haystack" != *"$needle"* ]]; then
+    pass "$message"
+  else
+    fail "$message (unexpected '$needle')"
+  fi
+}
+
 finish_tests() {
   if ((TEST_FAILURES > 0)); then
     printf '%d test(s) failed\n' "$TEST_FAILURES" >&2
