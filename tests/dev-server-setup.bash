@@ -131,4 +131,58 @@ profile_content=$(<"$DEV_SETUP_HOME/.bashrc")
 assert_count 1 "$profile_content" "# >>> johanbostrom dev setup: nvm >>>" "reruns keep one nvm profile block"
 assert_count 1 "$profile_content" "# >>> johanbostrom dev setup: bun >>>" "reruns keep one Bun profile block"
 
+: >"$DEV_SETUP_COMMAND_LOG"
+export DEV_SETUP_GIT_NAME="Existing User" DEV_SETUP_GIT_EMAIL="existing@example.com"
+export DEV_SETUP_GH_AUTHENTICATED=0 DEV_SETUP_CODEX_AUTHENTICATED=0
+export DEV_SETUP_DOCKER_MEMBER=0 DEV_SETUP_DOCKER_GROUP_EXISTS=1
+run_wizard <<<"n"
+assert_eq "" "$(<"$DEV_SETUP_COMMAND_LOG")" "declining the wizard performs no configuration"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+run_wizard <<'EOF'
+y
+n
+n
+n
+n
+n
+EOF
+assert_eq "" "$(<"$DEV_SETUP_COMMAND_LOG")" "every wizard step can be skipped independently"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+git_identity_output=$(configure_git_identity <<<"n")
+assert_contains "$git_identity_output" "Existing User" "Git setup displays the existing name"
+assert_contains "$git_identity_output" "existing@example.com" "Git setup displays the existing email"
+assert_not_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "git config --global user.name" "Git identity is preserved without confirmation"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+export DEV_SETUP_GH_AUTHENTICATED=0
+configure_github_auth <<<"y"
+assert_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "gh auth login" "GitHub authentication uses gh auth login"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+export DEV_SETUP_GH_AUTHENTICATED=1
+configure_github_auth <<<"n"
+assert_not_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "gh auth login" "existing GitHub authentication is preserved"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+export DEV_SETUP_CODEX_AUTHENTICATED=0
+configure_codex_auth <<<"y"
+assert_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "codex login" "Codex authentication uses codex login"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+export DEV_SETUP_CODEX_AUTHENTICATED=1
+configure_codex_auth <<<"n"
+assert_not_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "codex login" "existing Codex authentication is preserved"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+export DEV_SETUP_DOCKER_MEMBER=0 DEV_SETUP_DOCKER_GROUP_EXISTS=1
+docker_output=$(configure_docker_access <<<"y")
+assert_contains "$docker_output" "docker group grants root-level privileges" "Docker setup discloses root-equivalent access"
+assert_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "usermod -aG docker tester" "confirmed Docker setup adds only the invoking user"
+
+: >"$DEV_SETUP_COMMAND_LOG"
+configure_node_default <<<"y"
+assert_contains "$(<"$DEV_SETUP_COMMAND_LOG")" "nvm alias default lts/\*" "confirmed Node setup selects LTS as nvm's default"
+
 finish_tests

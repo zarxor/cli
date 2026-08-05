@@ -306,6 +306,129 @@ install_user_tools() {
   ensure_shell_profile
 }
 
+confirm() {
+  local prompt=$1 answer
+  printf '%s [y/N] ' "$prompt"
+  IFS= read -r answer || return 1
+  [[ "$answer" =~ ^[Yy]([Ee][Ss])?$ ]]
+}
+
+configure_git_identity() {
+  local current_name current_email new_name new_email
+  current_name=${DEV_SETUP_GIT_NAME:-$(git config --global --get user.name 2>/dev/null || true)}
+  current_email=${DEV_SETUP_GIT_EMAIL:-$(git config --global --get user.email 2>/dev/null || true)}
+  printf 'Current Git name: %s\n' "${current_name:-not set}"
+  printf 'Current Git email: %s\n' "${current_email:-not set}"
+
+  if ! confirm "Configure Git name and email?"; then
+    return 0
+  fi
+
+  printf 'Git name: '
+  IFS= read -r new_name
+  printf 'Git email: '
+  IFS= read -r new_email
+  [[ -n "$new_name" && -n "$new_email" ]] || {
+    log "Git identity skipped because both values are required."
+    return 0
+  }
+  printf 'Proposed Git identity: %s <%s>\n' "$new_name" "$new_email"
+  if confirm "Save this Git identity?"; then
+    run git config --global user.name "$new_name"
+    run git config --global user.email "$new_email"
+  fi
+}
+
+github_is_authenticated() {
+  if [[ -n "${DEV_SETUP_GH_AUTHENTICATED:-}" ]]; then
+    [[ "$DEV_SETUP_GH_AUTHENTICATED" == 1 ]]
+  else
+    gh auth status >/dev/null 2>&1
+  fi
+}
+
+configure_github_auth() {
+  if github_is_authenticated; then
+    log "GitHub CLI is already authenticated."
+    confirm "Reauthenticate GitHub CLI?" && run gh auth login
+  else
+    confirm "Authenticate GitHub CLI?" && run gh auth login
+  fi
+  return 0
+}
+
+codex_is_authenticated() {
+  if [[ -n "${DEV_SETUP_CODEX_AUTHENTICATED:-}" ]]; then
+    [[ "$DEV_SETUP_CODEX_AUTHENTICATED" == 1 ]]
+  else
+    codex login status >/dev/null 2>&1
+  fi
+}
+
+configure_codex_auth() {
+  if codex_is_authenticated; then
+    log "Codex is already authenticated."
+    confirm "Reauthenticate Codex?" && run codex login
+  else
+    confirm "Authenticate Codex?" && run codex login
+  fi
+  return 0
+}
+
+docker_user_is_member() {
+  if [[ -n "${DEV_SETUP_DOCKER_MEMBER:-}" ]]; then
+    [[ "$DEV_SETUP_DOCKER_MEMBER" == 1 ]]
+  else
+    id -nG "$DEV_SETUP_USER" 2>/dev/null | tr ' ' '\n' | grep -Fxq docker
+  fi
+}
+
+docker_group_exists() {
+  if [[ -n "${DEV_SETUP_DOCKER_GROUP_EXISTS:-}" ]]; then
+    [[ "$DEV_SETUP_DOCKER_GROUP_EXISTS" == 1 ]]
+  else
+    getent group docker >/dev/null 2>&1
+  fi
+}
+
+configure_docker_access() {
+  if docker_user_is_member; then
+    log "$DEV_SETUP_USER already belongs to the docker group."
+    return 0
+  fi
+
+  printf 'Membership in the docker group grants root-level privileges.\n'
+  if confirm "Allow $DEV_SETUP_USER to run Docker without sudo?"; then
+    docker_group_exists || run sudo groupadd docker
+    run sudo usermod -aG docker "$DEV_SETUP_USER"
+    DOCKER_LOGOUT_REQUIRED=1
+  fi
+}
+
+configure_node_default() {
+  local active_version=${DEV_SETUP_NODE_VERSION:-latest-LTS}
+  if [[ "${DEV_SETUP_TEST_MODE:-0}" != 1 ]]; then
+    active_version=$(nvm current)
+  fi
+  printf 'Active Node.js LTS: %s\n' "$active_version"
+  confirm "Use the latest Node.js LTS as nvm's default?" &&
+    run nvm alias default 'lts/*'
+  return 0
+}
+
+run_wizard() {
+  if ! confirm "Installation finished. Start the optional setup wizard?"; then
+    log "Setup wizard skipped."
+    return 0
+  fi
+
+  configure_git_identity
+  configure_github_auth
+  configure_codex_auth
+  configure_docker_access
+  configure_node_default
+}
+
 main() {
   require_supported_host
 }
