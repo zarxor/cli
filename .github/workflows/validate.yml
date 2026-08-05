@@ -1,0 +1,42 @@
+name: Validate scripts
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debian
+            image: debian:bookworm-slim
+            install: apt-get update && apt-get install -y bash git shellcheck gawk findutils
+          - name: Arch
+            image: archlinux:base
+            install: pacman -Syu --noconfirm bash git shellcheck gawk findutils
+    name: Validate on ${{ matrix.name }}
+    container: ${{ matrix.image }}
+    steps:
+      - name: Install test dependencies
+        run: ${{ matrix.install }}
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Validate Bash syntax
+        run: bash -n linux/dev-server/setup.sh tests/*.bash
+
+      - name: Run ShellCheck
+        run: shellcheck --severity=warning linux/dev-server/setup.sh tests/*.bash
+
+      - name: Run behavioral and publication tests
+        run: bash tests/run.bash
+
+      - name: Check whitespace
+        run: git diff --check
