@@ -67,7 +67,7 @@ export DEV_SETUP_COMMAND_LOG DEV_SETUP_DPKG_ARCH=amd64
 : >"$DEV_SETUP_COMMAND_LOG"
 OS_RELEASE_FILE="$TEST_TMP/debian-os-release"
 detect_platform
-export DEV_SETUP_DOCKER_CONFLICTS="docker.io containerd"
+export DEV_SETUP_DOCKER_CONFLICTS="docker.io docker-compose-v2 containerd"
 install_system_packages
 unset DEV_SETUP_DOCKER_CONFLICTS
 debian_commands=$(<"$DEV_SETUP_COMMAND_LOG")
@@ -75,8 +75,10 @@ assert_contains "$debian_commands" "apt-get update" "Debian refreshes apt metada
 assert_contains "$debian_commands" "apt-get install -y ca-certificates curl git gnupg unzip build-essential" "Debian installs base development packages and Bun's unzip prerequisite"
 assert_contains "$debian_commands" "https://cli.github.com/packages/githubcli-archive-keyring.gpg" "Debian configures the GitHub CLI repository"
 assert_contains "$debian_commands" "https://download.docker.com/linux/debian/gpg" "Debian configures Docker's repository"
-assert_contains "$debian_commands" "apt-get remove -y docker.io containerd" "Debian removes only installed packages that conflict with Docker CE"
+assert_contains "$debian_commands" "apt-get remove -y docker.io docker-compose-v2 containerd" "Debian and Ubuntu remove only installed packages that conflict with Docker CE"
 assert_contains "$debian_commands" "docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "Debian converges Docker packages"
+conflict_candidates=$(docker_conflict_candidates)
+assert_contains "$conflict_candidates" "docker-compose-v2" "Ubuntu's Compose v2 package is included in Docker CE conflict detection"
 
 : >"$DEV_SETUP_COMMAND_LOG"
 OS_RELEASE_FILE="$TEST_TMP/arch-os-release"

@@ -160,13 +160,18 @@ Architectures: $architecture
 Signed-By: /etc/apt/keyrings/docker.asc"
 }
 
+docker_conflict_candidates() {
+  printf '%s\n' docker.io docker-compose docker-compose-v2 docker-doc \
+    docker-buildx podman-docker containerd runc
+}
+
 remove_conflicting_docker_packages() {
   local conflicts=${DEV_SETUP_DOCKER_CONFLICTS:-}
-  local -a packages=()
+  local -a candidates=() packages=()
 
   if [[ -z "$conflicts" && "${DEV_SETUP_TEST_MODE:-0}" != 1 ]]; then
-    conflicts=$(dpkg --get-selections \
-      docker.io docker-compose docker-doc docker-buildx podman-docker containerd runc \
+    mapfile -t candidates < <(docker_conflict_candidates)
+    conflicts=$(dpkg --get-selections "${candidates[@]}" \
       2>/dev/null | awk '$2 != "deinstall" && $2 != "purge" {print $1}' || true)
   fi
   [[ -n "$conflicts" ]] || return 0
