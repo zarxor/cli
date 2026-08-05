@@ -7,6 +7,12 @@ import (
 	"github.com/zarxor/scripts/internal/profile"
 )
 
+// Tool and ToolID are the catalog boundary types consumed by adapters and
+// planners. They remain aliases so profile definitions have one source of
+// truth while callers do not need to depend on the profile package.
+type Tool = profile.Tool
+type ToolID = profile.ToolID
+
 var Catalog = []profile.Tool{
 	{ID: profile.Git, Name: "Git"},
 	{ID: profile.GitHubCLI, Name: "GitHub CLI"},
