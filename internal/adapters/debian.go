@@ -50,8 +50,50 @@ var DockerConflictCandidates = []string{
 }
 
 const (
-	githubCLIKeyURL = "https://cli.github.com/packages/githubcli-archive-keyring.gpg"
-	nvmPinnedCommit = "d025499c7f5466d0dc0a324dc98eab72cce8377d" // nvm v0.40.3
+	githubCLIKeyURL     = "https://cli.github.com/packages/githubcli-archive-keyring.gpg"
+	nvmPinnedCommit     = "d025499c7f5466d0dc0a324dc98eab72cce8377d" // nvm v0.40.3
+	profileUpdateHelper = `#!/bin/sh
+set -eu
+
+profile=$1
+name=$2
+content=$3
+directory=${profile%/*}
+[ "$directory" != "$profile" ] || directory=.
+mkdir -p -- "$directory"
+
+start="# >>> johanbostrom jb: $name >>>"
+end="# <<< johanbostrom jb: $name <<<"
+mode=600
+if [ -e "$profile" ]; then
+	mode=$(stat -c %a -- "$profile")
+fi
+
+temporary=$(mktemp "$directory/.jb-profile-XXXXXX")
+cleanup() {
+	if [ -n "${temporary:-}" ]; then
+		rm -f -- "$temporary"
+	fi
+}
+trap cleanup EXIT HUP INT TERM
+
+if [ -e "$profile" ]; then
+	awk -v start="$start" -v end="$end" '
+		$0 == start { skipping = 1; next }
+		$0 == end { skipping = 0; next }
+		!skipping { kept[++count] = $0 }
+		END {
+			while (count > 0 && kept[count] == "") count--
+			for (index = 1; index <= count; index++) print kept[index]
+			if (count > 0) print ""
+		}
+	' "$profile" > "$temporary"
+fi
+printf '%s\n%s\n%s\n' "$start" "$content" "$end" >> "$temporary"
+chmod "$mode" "$temporary"
+mv -f -- "$temporary" "$profile"
+temporary=
+`
 )
 
 type linuxAdapter struct {
@@ -611,6 +653,9 @@ func (a linuxAdapter) detectNVMExecutable(ctx context.Context, executable string
 }
 
 func expectedMissingComponent(id tools.ToolID, result runner.Result) bool {
+	if result.ExitCode <= 0 {
+		return false
+	}
 	component := ""
 	switch id {
 	case profile.DockerBuildx:
@@ -620,9 +665,14 @@ func expectedMissingComponent(id tools.ToolID, result runner.Result) bool {
 	default:
 		return false
 	}
-	message := strings.ToLower(result.Stdout + "\n" + result.Stderr)
-	return strings.Contains(message, "docker: '"+component+"' is not a docker command") ||
-		strings.Contains(message, "docker: \""+component+"\" is not a docker command")
+	for _, line := range strings.Split(strings.ToLower(result.Stdout+"\n"+result.Stderr), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "docker: '"+component+"' is not a docker command" ||
+			line == "docker: \""+component+"\" is not a docker command" {
+			return true
+		}
+	}
+	return false
 }
 
 func expectedMissingComponentExecutable(executable string, result runner.Result) bool {
@@ -632,17 +682,35 @@ func expectedMissingComponentExecutable(executable string, result runner.Result)
 	switch executable {
 	case "node", "npm", "corepack", "pnpm", "yarn", "codex", "bun":
 		for _, line := range strings.Split(strings.ToLower(result.Stdout+"\n"+result.Stderr), "\n") {
-			line = strings.TrimSpace(line)
-			for _, diagnostic := range []string{executable + ": not found", executable + ": command not found"} {
-				if line == diagnostic || strings.HasSuffix(line, ": "+diagnostic) {
-					return true
-				}
+			if expectedNVMExecMissingLine(strings.TrimSpace(line), executable) {
+				return true
 			}
 		}
 		return false
 	default:
 		return false
 	}
+}
+
+func expectedNVMExecMissingLine(line, executable string) bool {
+	for _, diagnostic := range []string{executable + ": not found", executable + ": command not found"} {
+		if line == diagnostic {
+			return true
+		}
+		scriptAndLine, ok := strings.CutSuffix(line, ": exec: "+diagnostic)
+		if !ok {
+			continue
+		}
+		separator := strings.LastIndex(scriptAndLine, ": ")
+		if separator < 0 || filepath.Base(scriptAndLine[:separator]) != "nvm-exec" {
+			continue
+		}
+		lineNumber := strings.TrimPrefix(scriptAndLine[separator+2:], "line ")
+		if _, err := strconv.Atoi(lineNumber); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func nvmExecutable(id tools.ToolID) (string, bool) {
@@ -706,57 +774,16 @@ func (a linuxAdapter) ensureProfileBlock(ctx context.Context, name, content stri
 }
 
 func (a linuxAdapter) ensureProfileBlockAsUser(ctx context.Context, profilePath, name, content string) error {
-	directory := filepath.Dir(profilePath)
-	if _, err := a.runUserCommand(ctx, nil, "mkdir", "-p", directory); err != nil {
-		return err
-	}
-
-	mode := "0600"
-	stat, err := a.runUserCommand(ctx, nil, "stat", "-c", "%a", "--", profilePath)
-	existing := ""
-	if err == nil {
-		mode = strings.TrimSpace(stat.Stdout)
-		if _, parseErr := strconv.ParseUint(mode, 8, 12); parseErr != nil {
-			return fmt.Errorf("invalid mode %q for %s", mode, profilePath)
-		}
-		read, readErr := a.runUserCommand(ctx, nil, "cat", "--", profilePath)
-		if readErr != nil {
-			return readErr
-		}
-		existing = read.Stdout
-	} else if stat.ExitCode != 1 || !strings.Contains(strings.ToLower(stat.Stderr), "no such file or directory") {
-		return err
-	}
-
-	source, err := createTemporary(a.config.TempDir, "jb-profile-content-*", updatedProfile(existing, name, content))
+	helper, err := createTemporary(a.config.TempDir, "jb-profile-update-*", profileUpdateHelper)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(source)
-	if err := os.Chmod(source, 0644); err != nil {
+	defer os.Remove(helper)
+	if err := os.Chmod(helper, 0644); err != nil {
 		return err
 	}
-
-	created, err := a.runUserCommand(ctx, nil, "mktemp", filepath.Join(directory, ".jb-profile-XXXXXX"))
-	if err != nil {
-		return err
-	}
-	temporary := strings.TrimSpace(created.Stdout)
-	if temporary == "" || filepath.Dir(temporary) != directory {
-		return fmt.Errorf("mktemp returned invalid profile path %q", temporary)
-	}
-	cleanup := func() {
-		_, _ = a.runUserCommand(ctx, nil, "rm", "-f", "--", temporary)
-	}
-	if _, err := a.runUserCommand(ctx, nil, "install", "-m", mode, "--", source, temporary); err != nil {
-		cleanup()
-		return err
-	}
-	if _, err := a.runUserCommand(ctx, nil, "mv", "-f", "--", temporary, profilePath); err != nil {
-		cleanup()
-		return err
-	}
-	return nil
+	_, err = a.runUserCommand(ctx, nil, "sh", helper, profilePath, name, content)
+	return err
 }
 
 func updatedProfile(existing, name, content string) string {

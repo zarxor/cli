@@ -239,13 +239,9 @@ func TestSudoInvocationDelegatesCompleteProfileMutationToInvokingUser(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	userTemporary := filepath.Join(home, ".jb-profile-user")
-	userPrefix := []string{"-H", "-u", "johan", "env", "HOME=" + home}
-	fixture.Set("sudo", append(append([]string{}, userPrefix...), "stat", "-c", "%a", "--", profilePath), runner.Result{Stdout: "640\n"}, nil)
-	fixture.Set("sudo", append(append([]string{}, userPrefix...), "cat", "--", profilePath), runner.Result{Stdout: original}, nil)
-	fixture.Set("sudo", append(append([]string{}, userPrefix...), "mktemp", filepath.Join(home, ".jb-profile-XXXXXX")), runner.Result{Stdout: userTemporary + "\n"}, nil)
+	rootTemp := t.TempDir()
 	config := LinuxConfig{
-		Root: true, Home: home, TempDir: t.TempDir(),
+		Root: true, Home: home, TempDir: rootTemp,
 		InvokingUser: "johan", InvokingUID: 1000, InvokingGID: 1000,
 	}
 	adapter := NewArchAdapter(fixture, fixture, config)
@@ -255,12 +251,7 @@ func TestSudoInvocationDelegatesCompleteProfileMutationToInvokingUser(t *testing
 	}
 
 	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "git", "clone", "--branch", "v0.40.3", "--depth", "1", "https://github.com/nvm-sh/nvm.git", filepath.Join(home, ".nvm"))
-	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "mkdir", "-p", home)
-	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "stat", "-c", "%a", "--", profilePath)
-	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "cat", "--", profilePath)
-	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "mktemp", filepath.Join(home, ".jb-profile-XXXXXX"))
-	assertHasCommandWithSuffix(t, fixture.Commands, "sudo", append(userPrefix, "install", "-m", "640", "--"), userTemporary)
-	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "mv", "-f", "--", userTemporary, profilePath)
+	assertHasUserProfileHelper(t, fixture.Commands, home, rootTemp, profilePath, "nvm")
 	for _, command := range fixture.Commands {
 		if command.Command == "chown" {
 			t.Fatalf("profile ownership was repaired after a root mutation: %#v", command)
@@ -275,6 +266,58 @@ func TestSudoInvocationDelegatesCompleteProfileMutationToInvokingUser(t *testing
 	}
 	if info, err := os.Stat(profilePath); err != nil || info.Mode().Perm() != beforeInfo.Mode().Perm() {
 		t.Fatalf("root process changed profile mode: info=%v err=%v", info, err)
+	}
+}
+
+func TestSudoProfileMutationDoesNotCopyExistingProfileIntoRootTemporary(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	rootTemp := t.TempDir()
+	profilePath := filepath.Join(home, ".bashrc")
+	privateProfile := "export PRIVATE_API_TOKEN=do-not-copy-as-root\n"
+	if err := os.WriteFile(profilePath, []byte(privateProfile), 0640); err != nil {
+		t.Fatal(err)
+	}
+	userTemporary := filepath.Join(home, ".jb-profile-user")
+	userPrefix := []string{"-H", "-u", "johan", "env", "HOME=" + home}
+	fixture.Set("sudo", append(append([]string{}, userPrefix...), "stat", "-c", "%a", "--", profilePath), runner.Result{Stdout: "640\n"}, nil)
+	fixture.Set("sudo", append(append([]string{}, userPrefix...), "cat", "--", profilePath), runner.Result{Stdout: privateProfile}, nil)
+	fixture.Set("sudo", append(append([]string{}, userPrefix...), "mktemp", filepath.Join(home, ".jb-profile-XXXXXX")), runner.Result{Stdout: userTemporary + "\n"}, nil)
+	capturing := &rootTemporaryCapturingRunner{fixture: fixture, directory: rootTemp, contents: make(map[string]string)}
+	adapter := NewArchAdapter(capturing, fixture, LinuxConfig{
+		Root: true, Home: home, TempDir: rootTemp, InvokingUser: "johan", InvokingUID: 1000, InvokingGID: 1000,
+	})
+
+	if err := adapter.Install(context.Background(), mustTool(t, profile.NVM)); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range capturing.contents {
+		if strings.Contains(content, privateProfile) {
+			t.Fatalf("root temporary %s copied full private profile content: %q", path, content)
+		}
+	}
+}
+
+func TestSudoProfileMutationDoesNotParseLocalizedMissingFileDiagnostics(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	rootTemp := t.TempDir()
+	profilePath := filepath.Join(home, ".bashrc")
+	userPrefix := []string{"-H", "-u", "johan", "env", "HOME=" + home}
+	translatedErr := errors.New("exit status 1")
+	fixture.Set("sudo", append(append([]string{}, userPrefix...), "stat", "-c", "%a", "--", profilePath), runner.Result{Stderr: "stat: kan inte ta status på filen\n", ExitCode: 1}, translatedErr)
+	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{
+		Root: true, Home: home, TempDir: rootTemp, InvokingUser: "johan", InvokingUID: 1000, InvokingGID: 1000,
+	})
+
+	if err := adapter.Install(context.Background(), mustTool(t, profile.NVM)); err != nil {
+		t.Fatalf("Install() error = %v, want absent profile handled without localized stderr parsing", err)
+	}
+	assertHasUserProfileHelper(t, fixture.Commands, home, rootTemp, profilePath, "nvm")
+	for _, command := range fixture.Commands {
+		if command.Command == "sudo" && slicesContain(command.Args, "stat") && slicesContain(command.Args, profilePath) {
+			t.Fatalf("root-side transaction still parsed localized stat diagnostics: %#v", command)
+		}
 	}
 }
 
@@ -367,7 +410,7 @@ func TestLinuxTreatsMissingNVMManagedComponentAsAbsent(t *testing.T) {
 	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
 	fixture.LookPaths[nvmExec] = nvmExec
 	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "pnpm", "--version"}
-	fixture.Set("env", args, runner.Result{Stderr: "pnpm: not found\n", ExitCode: 127}, errors.New("exit status 127"))
+	fixture.Set("env", args, runner.Result{Stderr: nvmExec + ": line 20: exec: pnpm: not found\n", ExitCode: 127}, errors.New("exit status 127"))
 	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
 
 	got, err := adapter.Detect(context.Background(), mustTool(t, profile.PNPM))
@@ -388,6 +431,8 @@ func TestLinuxBrokenPresentExecutablesRemainDetectionErrors(t *testing.T) {
 		{name: "dynamic loader failure", result: runner.Result{Stderr: "npm: error while loading shared libraries: libnode.so: cannot open shared object file: No such file or directory\n", ExitCode: 127}, wantErr: errors.New("loader failed")},
 		{name: "permission failure", result: runner.Result{Stderr: "npm: Permission denied\n", ExitCode: 127}, wantErr: errors.New("permission denied")},
 		{name: "arbitrary missing file", result: runner.Result{Stderr: "npm: config: No such file or directory\n", ExitCode: 1}, wantErr: errors.New("config missing")},
+		{name: "embedded module diagnostic", result: runner.Result{Stderr: "module loader failure: npm: not found\n", ExitCode: 127}, wantErr: errors.New("module failed")},
+		{name: "embedded permission diagnostic", result: runner.Result{Stderr: "permission denied: npm: command not found\n", ExitCode: 127}, wantErr: errors.New("permission failed")},
 	}
 
 	for _, test := range tests {
@@ -708,14 +753,19 @@ func assertHasCommand(t *testing.T, commands []runner.Command, command string, a
 	t.Fatalf("commands %#v do not contain %#v", commands, want)
 }
 
-func assertHasCommandWithSuffix(t *testing.T, commands []runner.Command, command string, prefix []string, suffix string) {
+func assertHasUserProfileHelper(t *testing.T, commands []runner.Command, home, rootTemp, profilePath, blockName string) {
 	t.Helper()
+	prefix := []string{"-H", "-u", "johan", "env", "HOME=" + home, "sh"}
 	for _, got := range commands {
-		if got.Command == command && len(got.Args) == len(prefix)+2 && reflect.DeepEqual(got.Args[:len(prefix)], prefix) && got.Args[len(got.Args)-1] == suffix {
+		if got.Command != "sudo" || len(got.Args) != len(prefix)+4 || !reflect.DeepEqual(got.Args[:len(prefix)], prefix) {
+			continue
+		}
+		helper := got.Args[len(prefix)]
+		if filepath.Dir(helper) == rootTemp && got.Args[len(prefix)+1] == profilePath && got.Args[len(prefix)+2] == blockName {
 			return
 		}
 	}
-	t.Fatalf("commands %#v do not contain %s with prefix %#v and suffix %q", commands, command, prefix, suffix)
+	t.Fatalf("commands %#v do not contain structured sudo-user profile helper for %s", commands, profilePath)
 }
 
 func curlDestination(t *testing.T, commands []runner.Command, url string) string {
@@ -776,6 +826,29 @@ func (e *fixtureElevation) RunElevated(ctx context.Context, command string, args
 type fileCapturingRunner struct {
 	fixture *runner.Fixture
 	files   map[string]string
+}
+
+type rootTemporaryCapturingRunner struct {
+	fixture   *runner.Fixture
+	directory string
+	contents  map[string]string
+}
+
+func (r *rootTemporaryCapturingRunner) LookPath(ctx context.Context, name string) (string, error) {
+	return r.fixture.LookPath(ctx, name)
+}
+
+func (r *rootTemporaryCapturingRunner) Run(ctx context.Context, command string, args ...string) (runner.Result, error) {
+	for _, arg := range args {
+		relative, err := filepath.Rel(r.directory, arg)
+		if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if content, err := os.ReadFile(arg); err == nil {
+			r.contents[arg] = string(content)
+		}
+	}
+	return r.fixture.Run(ctx, command, args...)
 }
 
 func (r *fileCapturingRunner) LookPath(ctx context.Context, name string) (string, error) {

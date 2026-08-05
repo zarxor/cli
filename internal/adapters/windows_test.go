@@ -106,7 +106,10 @@ func TestWindowsBrokenPresentExecutablesRemainDetectionErrors(t *testing.T) {
 		{name: "dynamic loader failure", id: profile.NPM, result: runner.Result{Stderr: "npm: error while loading shared libraries: libnode.dll: No such file or directory\n", ExitCode: 127}, wantErr: errors.New("loader failed")},
 		{name: "permission failure", id: profile.NPM, result: runner.Result{Stderr: "npm: Permission denied\n", ExitCode: 127}, wantErr: errors.New("permission denied")},
 		{name: "arbitrary missing file", id: profile.NPM, result: runner.Result{Stderr: "npm: config: No such file or directory\n", ExitCode: 1}, wantErr: errors.New("config missing")},
+		{name: "embedded module diagnostic", id: profile.NPM, result: runner.Result{Stderr: "module loader failure: npm: not found\n", ExitCode: 127}, wantErr: errors.New("module failed")},
 		{name: "unrelated Docker unknown command", id: profile.DockerBuildx, result: runner.Result{Stderr: "docker daemon returned unknown command while loading plugin\n", ExitCode: 1}, wantErr: errors.New("plugin failed")},
+		{name: "embedded Docker permission diagnostic", id: profile.DockerBuildx, result: runner.Result{Stderr: "permission denied: docker: 'buildx' is not a docker command\n", ExitCode: 1}, wantErr: errors.New("permission failed")},
+		{name: "Docker diagnostic with success status", id: profile.DockerBuildx, result: runner.Result{Stderr: "docker: 'buildx' is not a docker command\n", ExitCode: 0}, wantErr: errors.New("transport failed")},
 	}
 
 	for _, test := range tests {
@@ -349,6 +352,62 @@ func TestWindowsDockerPartialStateUsesOnePhysicalPackageRepair(t *testing.T) {
 				t.Fatalf("Docker convergence commands = %#v, want one forced physical-package repair %#v", elevation.commands, want)
 			}
 		})
+	}
+}
+
+func TestWindowsDockerRepairIsIndependentOfDetectionOrder(t *testing.T) {
+	fixture := runner.NewFixture()
+	dockerPath := `C:\Program Files\Docker\Docker\resources\bin\docker.exe`
+	fixture.LookPaths["docker"] = dockerPath
+	fixture.Set(dockerPath, []string{"--version"}, runner.Result{Stdout: "Docker version 28.1.1\n"}, nil)
+	fixture.Set(dockerPath, []string{"buildx", "version"}, runner.Result{Stderr: "docker: 'buildx' is not a docker command\n", ExitCode: 1}, errors.New("exit status 1"))
+	fixture.Set(dockerPath, []string{"compose", "version"}, runner.Result{Stdout: "Docker Compose version v2.36.0\n"}, nil)
+	fixture.Set("winget", []string{"show", "--id", "Docker.DockerDesktop", "--exact"}, runner.Result{Stdout: "Version: 4.42.0\n"}, nil)
+	elevation := &windowsFixtureElevation{fixture: fixture}
+	adapter := NewWindowsAdapter(fixture, elevation)
+
+	for _, id := range []profile.ToolID{profile.DockerCompose, profile.DockerBuildx, profile.Docker} {
+		if _, err := adapter.Detect(context.Background(), mustTool(t, id)); err != nil {
+			t.Fatalf("Detect(%s): %v", id, err)
+		}
+	}
+	if err := adapter.Update(context.Background(), mustTool(t, profile.Docker)); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"install", "--id", "Docker.DockerDesktop", "--exact", "--accept-package-agreements", "--accept-source-agreements", "--force"}
+	if len(elevation.commands) != 1 || !reflect.DeepEqual(elevation.commands[0].Args, want) {
+		t.Fatalf("Docker convergence commands = %#v, want fresh forced repair %#v", elevation.commands, want)
+	}
+}
+
+func TestWindowsDockerConvergenceRechecksHealthAfterRepeatedDetection(t *testing.T) {
+	fixture := runner.NewFixture()
+	dockerPath := `C:\Program Files\Docker\Docker\resources\bin\docker.exe`
+	fixture.LookPaths["docker"] = dockerPath
+	fixture.Set(dockerPath, []string{"--version"}, runner.Result{Stdout: "Docker version 28.1.1\n"}, nil)
+	fixture.Set(dockerPath, []string{"buildx", "version"}, runner.Result{Stderr: "docker: 'buildx' is not a docker command\n", ExitCode: 1}, errors.New("exit status 1"))
+	fixture.Set(dockerPath, []string{"compose", "version"}, runner.Result{Stdout: "Docker Compose version v2.36.0\n"}, nil)
+	fixture.Set("winget", []string{"show", "--id", "Docker.DockerDesktop", "--exact"}, runner.Result{Stdout: "Version: 4.42.0\n"}, nil)
+	elevation := &windowsFixtureElevation{fixture: fixture}
+	adapter := NewWindowsAdapter(fixture, elevation)
+
+	for _, id := range []profile.ToolID{profile.Docker, profile.DockerBuildx} {
+		if _, err := adapter.Detect(context.Background(), mustTool(t, id)); err != nil {
+			t.Fatalf("initial Detect(%s): %v", id, err)
+		}
+	}
+	fixture.Set(dockerPath, []string{"buildx", "version"}, runner.Result{Stdout: "github.com/docker/buildx v0.24.0\n"}, nil)
+	if _, err := adapter.Detect(context.Background(), mustTool(t, profile.DockerBuildx)); err != nil {
+		t.Fatalf("repeated Detect(buildx): %v", err)
+	}
+	if err := adapter.Update(context.Background(), mustTool(t, profile.Docker)); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"upgrade", "--id", "Docker.DockerDesktop", "--exact", "--accept-package-agreements", "--accept-source-agreements"}
+	if len(elevation.commands) != 1 || !reflect.DeepEqual(elevation.commands[0].Args, want) {
+		t.Fatalf("Docker convergence commands = %#v, want fresh healthy upgrade %#v", elevation.commands, want)
 	}
 }
 

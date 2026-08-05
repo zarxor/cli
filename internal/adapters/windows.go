@@ -21,8 +21,6 @@ type WindowsAdapter struct {
 	elevation runner.Elevation
 	config    WindowsConfig
 	converged map[string]struct{}
-	installed map[string]bool
-	repair    map[string]bool
 }
 
 type WindowsConfig struct {
@@ -75,7 +73,7 @@ func NewWindowsAdapter(commandRunner runner.Runner, elevation runner.Elevation, 
 	}
 	return &WindowsAdapter{
 		runner: commandRunner, elevation: elevation, config: config,
-		converged: make(map[string]struct{}), installed: make(map[string]bool), repair: make(map[string]bool),
+		converged: make(map[string]struct{}),
 	}
 }
 
@@ -98,12 +96,6 @@ func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.De
 		}
 	}
 	if source.packageID != "" {
-		if tool.ID == profile.Docker && detection.Installed {
-			a.installed[source.packageID] = true
-		}
-		if (tool.ID == profile.DockerBuildx || tool.ID == profile.DockerCompose) && !detection.Installed && a.installed[source.packageID] {
-			a.repair[source.packageID] = true
-		}
 		result, err := a.runner.Run(ctx, "winget", "show", "--id", source.packageID, "--exact")
 		if err == nil {
 			detection.Candidate = labeledValue(result.Stdout, "Version")
@@ -232,7 +224,14 @@ func (a *WindowsAdapter) winGet(ctx context.Context, action string, source windo
 	if _, ok := a.converged[source.packageID]; ok {
 		return nil
 	}
-	force := a.repair[source.packageID]
+	force := false
+	if source.packageID == windowsSources[profile.Docker].packageID {
+		var err error
+		force, err = a.dockerDesktopNeedsRepair(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	if force {
 		action = "install"
 	}
@@ -250,6 +249,27 @@ func (a *WindowsAdapter) winGet(ctx context.Context, action string, source windo
 		a.converged[source.packageID] = struct{}{}
 	}
 	return err
+}
+
+func (a *WindowsAdapter) dockerDesktopNeedsRepair(ctx context.Context) (bool, error) {
+	executable, err := a.resolveExecutable(ctx, windowsSources[profile.Docker].executable)
+	if err != nil {
+		return false, nil
+	}
+	if _, err := a.runner.Run(ctx, executable, windowsSources[profile.Docker].version...); err != nil {
+		return false, err
+	}
+	for _, id := range []tools.ToolID{profile.DockerBuildx, profile.DockerCompose} {
+		result, err := a.runner.Run(ctx, executable, windowsSources[id].version...)
+		if err == nil {
+			continue
+		}
+		if expectedMissingComponent(id, result) {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
 }
 
 func (a *WindowsAdapter) installUserTool(ctx context.Context, tool tools.Tool) error {
