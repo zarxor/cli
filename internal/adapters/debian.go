@@ -653,7 +653,7 @@ func (a linuxAdapter) detectNVMExecutable(ctx context.Context, executable string
 }
 
 func expectedMissingComponent(id tools.ToolID, result runner.Result) bool {
-	if result.ExitCode <= 0 {
+	if result.ExitCode != 1 {
 		return false
 	}
 	component := ""

@@ -110,6 +110,7 @@ func TestWindowsBrokenPresentExecutablesRemainDetectionErrors(t *testing.T) {
 		{name: "unrelated Docker unknown command", id: profile.DockerBuildx, result: runner.Result{Stderr: "docker daemon returned unknown command while loading plugin\n", ExitCode: 1}, wantErr: errors.New("plugin failed")},
 		{name: "embedded Docker permission diagnostic", id: profile.DockerBuildx, result: runner.Result{Stderr: "permission denied: docker: 'buildx' is not a docker command\n", ExitCode: 1}, wantErr: errors.New("permission failed")},
 		{name: "Docker diagnostic with success status", id: profile.DockerBuildx, result: runner.Result{Stderr: "docker: 'buildx' is not a docker command\n", ExitCode: 0}, wantErr: errors.New("transport failed")},
+		{name: "Docker diagnostic with wrong nonzero status", id: profile.DockerBuildx, result: runner.Result{Stderr: "docker: 'buildx' is not a docker command\n", ExitCode: 127}, wantErr: errors.New("wrapper failed")},
 	}
 
 	for _, test := range tests {
