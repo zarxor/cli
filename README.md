@@ -124,6 +124,36 @@ are published through GitHub Releases.
 The repository's `CNAME` declares the same hostname. Release automation remains
 deferred; builds and verification run locally without triggering GitHub Actions.
 
+### Prepare a local release
+
+The local build scripts create the published release matrix outside the
+repository by default, in the system temporary directory. Both scripts use the
+verified Go executable at `.tools/go1.26.5/go/bin/go.exe`, compile with
+`-trimpath`, and inject the requested version (or `dev` when omitted):
+
+```powershell
+pwsh -NoProfile -File scripts/build-local.ps1 -Version v1.2.3
+pwsh -NoProfile -File scripts/check-artifacts.ps1 -Version v1.2.3
+```
+
+```bash
+bash scripts/build-local.sh --version v1.2.3
+bash scripts/check-artifacts.sh --version v1.2.3
+```
+
+Use `-OutputDir`/`--output-dir` to supply another output directory, and pass
+that same directory to `-ArtifactDir`/`--artifact-dir` for the checker. The
+release assets are:
+
+- `jb_linux_amd64.tar.gz` and `jb_linux_arm64.tar.gz`, each containing only `jb`
+- `jb_windows_amd64.zip` and `jb_windows_arm64.zip`, each containing only `jb.exe`
+- a matching `<asset>.sha256` file beside every archive
+
+The checker validates every archive's expected member and SHA-256 checksum. It
+also unpacks and runs `jb version` for the archive matching the current host's
+operating system and CPU architecture; run it on each native platform to cover
+both operating systems and architectures.
+
 ## Development
 
 Use the repository's verified Go toolchain and run:
