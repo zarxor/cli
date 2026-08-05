@@ -14,6 +14,7 @@ import (
 	"github.com/zarxor/scripts/internal/install"
 	"github.com/zarxor/scripts/internal/platform"
 	"github.com/zarxor/scripts/internal/profile"
+	"github.com/zarxor/scripts/internal/render"
 	"github.com/zarxor/scripts/internal/tools"
 )
 
@@ -161,6 +162,24 @@ func TestRunStopsBeforeMutationWhenPlanRenderingFails(t *testing.T) {
 	}
 	if len(summary.Results) != 1 || !errors.Is(summary.Results[0].Err, wantErr) {
 		t.Fatalf("results = %#v, want writer error", summary.Results)
+	}
+}
+
+func TestRunPropagatesNumberedSelectionRenderingFailure(t *testing.T) {
+	wantErr := errors.New("selection writer failed")
+	selection := render.NewNumberedSelection(strings.NewReader("\n"), &failingWriter{failAt: 0, err: wantErr})
+	adapter := &fixtureAdapter{}
+
+	summary := install.Run(context.Background(), install.Install, []install.ToolStatus{{Tool: mustTool(t, profile.Git)}}, fixtureAdapters(adapter), install.Options{
+		Writer:    &bytes.Buffer{},
+		Selection: selection,
+	})
+
+	if !summary.Failed || len(adapter.calls) != 0 {
+		t.Fatalf("Run() = %#v, adapter calls = %v; want selection render failure before mutation", summary, adapter.calls)
+	}
+	if len(summary.Results) != 1 || !errors.Is(summary.Results[0].Err, wantErr) {
+		t.Fatalf("results = %#v, want selection writer error", summary.Results)
 	}
 }
 

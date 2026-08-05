@@ -78,7 +78,7 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 		selectedIDs, err = opts.Selection.Select(ctx, items)
 		if err != nil {
 			_, _ = fmt.Fprintf(writer, "selection failed: %v\n", err)
-			return Summary{Failed: true}
+			return failedPlan(eligible, action, fmt.Errorf("select tools: %w", err))
 		}
 	} else {
 		if err := renderStatuses(writer, eligible); err != nil {
