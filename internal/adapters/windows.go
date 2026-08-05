@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 
 	"github.com/zarxor/scripts/internal/detect"
 	"github.com/zarxor/scripts/internal/profile"
@@ -17,13 +19,20 @@ import (
 type WindowsAdapter struct {
 	runner    runner.Runner
 	elevation runner.Elevation
+	config    WindowsConfig
+	converged map[string]struct{}
+}
+
+type WindowsConfig struct {
+	ProgramFiles string
+	NVMHome      string
+	NVMSymlink   string
 }
 
 type windowsToolSource struct {
 	executable string
 	version    []string
 	packageID  string
-	installer  string
 	system     bool
 }
 
@@ -42,17 +51,27 @@ var windowsSources = map[tools.ToolID]windowsToolSource{
 	profile.PNPM:          {executable: "pnpm", version: []string{"--version"}},
 	profile.Yarn:          {executable: "yarn", version: []string{"--version"}},
 	profile.Codex:         {executable: "codex", version: []string{"--version"}},
-	profile.Bun:           {executable: "bun", version: []string{"--version"}, installer: "https://bun.sh/install.ps1"},
+	profile.Bun:           {executable: "bun", version: []string{"--version"}},
 }
 
 // NewWindowsAdapter creates the native Windows adapter. A nil elevation uses
 // PowerShell's RunAs verb, while tests and callers can inject their own
 // elevation boundary.
-func NewWindowsAdapter(commandRunner runner.Runner, elevation runner.Elevation) Adapter {
+func NewWindowsAdapter(commandRunner runner.Runner, elevation runner.Elevation, configs ...WindowsConfig) Adapter {
 	if elevation == nil {
 		elevation = windowsElevation{runner: commandRunner}
 	}
-	return &WindowsAdapter{runner: commandRunner, elevation: elevation}
+	config := WindowsConfig{ProgramFiles: os.Getenv("ProgramFiles"), NVMHome: os.Getenv("NVM_HOME"), NVMSymlink: os.Getenv("NVM_SYMLINK")}
+	if len(configs) > 0 {
+		config = configs[0]
+	}
+	if config.NVMHome == "" {
+		config.NVMHome = filepath.Join(os.Getenv("APPDATA"), "nvm")
+	}
+	if config.NVMSymlink == "" {
+		config.NVMSymlink = filepath.Join(config.ProgramFiles, "nodejs")
+	}
+	return &WindowsAdapter{runner: commandRunner, elevation: elevation, config: config, converged: make(map[string]struct{})}
 }
 
 func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.Detection, error) {
@@ -62,21 +81,100 @@ func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.De
 	}
 
 	detection := detect.Detection{}
-	if _, err := a.runner.LookPath(ctx, source.executable); err == nil {
-		result, err := a.runner.Run(ctx, source.executable, source.version...)
+	if executable, err := a.resolveExecutable(ctx, source.executable); err == nil {
+		result, err := a.runner.Run(ctx, executable, source.version...)
 		if err != nil {
-			return detection, err
+			if !expectedMissingComponent(tool.ID, result) && !expectedMissingComponentExecutable(source.executable, result) {
+				return detection, err
+			}
+		} else {
+			detection.Installed = true
+			detection.Current = detect.ParseVersion(result.Stdout, result.Stderr)
 		}
-		detection.Installed = true
-		detection.Current = detect.ParseVersion(result.Stdout, result.Stderr)
 	}
 	if source.packageID != "" {
 		result, err := a.runner.Run(ctx, "winget", "show", "--id", source.packageID, "--exact")
 		if err == nil {
 			detection.Candidate = labeledValue(result.Stdout, "Version")
 		}
+	} else if detection.Installed {
+		candidate, err := a.userToolCandidate(ctx, tool.ID)
+		if err != nil {
+			return detect.Detection{}, err
+		}
+		detection.Candidate = candidate
 	}
 	return detection, nil
+}
+
+func (a *WindowsAdapter) userToolCandidate(ctx context.Context, id tools.ToolID) (string, error) {
+	if id == profile.Node {
+		nvm, err := a.resolveExecutable(ctx, "nvm")
+		if err != nil {
+			return "", err
+		}
+		result, err := a.runner.Run(ctx, nvm, "list", "available")
+		if err != nil {
+			return "", err
+		}
+		matches := regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+`).FindAllString(result.Stdout, -1)
+		if len(matches) < 2 {
+			return "", fmt.Errorf("nvm release metadata contains no LTS version")
+		}
+		return matches[1], nil
+	}
+	packageName, ok := map[tools.ToolID]string{
+		profile.NPM: "npm", profile.Corepack: "corepack", profile.PNPM: "pnpm",
+		profile.Yarn: "@yarnpkg/cli-dist", profile.Codex: "@openai/codex", profile.Bun: "bun",
+	}[id]
+	if !ok {
+		return "", nil
+	}
+	npm, err := a.resolveExecutable(ctx, "npm")
+	if err != nil {
+		return "", err
+	}
+	result, err := a.runner.Run(ctx, npm, "view", packageName, "version")
+	if err != nil {
+		return "", err
+	}
+	return detect.ParseVersion(result.Stdout, result.Stderr), nil
+}
+
+func (a *WindowsAdapter) resolveExecutable(ctx context.Context, name string) (string, error) {
+	if executable, err := a.runner.LookPath(ctx, name); err == nil {
+		return executable, nil
+	}
+	for _, candidate := range a.executableCandidates(name) {
+		if candidate == "" {
+			continue
+		}
+		if executable, err := a.runner.LookPath(ctx, candidate); err == nil {
+			return executable, nil
+		}
+	}
+	return "", fmt.Errorf("executable %q not found in process PATH or provider locations", name)
+}
+
+func (a *WindowsAdapter) executableCandidates(name string) []string {
+	switch name {
+	case "git":
+		return []string{filepath.Join(a.config.ProgramFiles, "Git", "cmd", "git.exe")}
+	case "gh":
+		return []string{filepath.Join(a.config.ProgramFiles, "GitHub CLI", "gh.exe")}
+	case "docker":
+		return []string{filepath.Join(a.config.ProgramFiles, "Docker", "Docker", "resources", "bin", "docker.exe")}
+	case "nvm":
+		return []string{filepath.Join(a.config.NVMHome, "nvm.exe")}
+	case "node":
+		return []string{filepath.Join(a.config.NVMSymlink, "node.exe")}
+	case "npm", "corepack", "pnpm", "yarn", "codex":
+		return []string{filepath.Join(a.config.NVMSymlink, name+".cmd")}
+	case "bun":
+		return []string{filepath.Join(a.config.NVMSymlink, "bun.exe"), filepath.Join(a.config.NVMSymlink, "bun.cmd")}
+	default:
+		return nil
+	}
 }
 
 func (a *WindowsAdapter) Install(ctx context.Context, tool tools.Tool) error {
@@ -87,7 +185,7 @@ func (a *WindowsAdapter) Install(ctx context.Context, tool tools.Tool) error {
 	if source.packageID != "" {
 		return a.winGet(ctx, "install", source)
 	}
-	return a.installUserTool(ctx, tool, source)
+	return a.installUserTool(ctx, tool)
 }
 
 func (a *WindowsAdapter) Update(ctx context.Context, tool tools.Tool) error {
@@ -105,7 +203,7 @@ func (a *WindowsAdapter) Update(ctx context.Context, tool tools.Tool) error {
 	if source.packageID != "" {
 		return a.winGet(ctx, "upgrade", source)
 	}
-	return a.updateUserTool(ctx, tool, source)
+	return a.updateUserTool(ctx, tool)
 }
 
 func (a *WindowsAdapter) Verify(ctx context.Context, tool tools.Tool) error {
@@ -120,69 +218,56 @@ func (a *WindowsAdapter) Verify(ctx context.Context, tool tools.Tool) error {
 }
 
 func (a *WindowsAdapter) winGet(ctx context.Context, action string, source windowsToolSource) error {
-	args := []string{action, "--id", source.packageID, "--exact", "--accept-package-agreements", "--accept-source-agreements"}
-	if !source.system {
-		return a.run(ctx, "winget", args...)
+	key := action + "\x00" + source.packageID
+	if _, ok := a.converged[key]; ok {
+		return nil
 	}
-	_, err := a.elevation.RunElevated(ctx, "winget", args...)
+	args := []string{action, "--id", source.packageID, "--exact", "--accept-package-agreements", "--accept-source-agreements"}
+	var err error
+	if !source.system {
+		err = a.run(ctx, "winget", args...)
+	} else {
+		_, err = a.elevation.RunElevated(ctx, "winget", args...)
+	}
+	if err == nil {
+		a.converged[key] = struct{}{}
+	}
 	return err
 }
 
-func (a *WindowsAdapter) installUserTool(ctx context.Context, tool tools.Tool, source windowsToolSource) error {
+func (a *WindowsAdapter) installUserTool(ctx context.Context, tool tools.Tool) error {
 	switch tool.ID {
 	case profile.Node:
 		return a.runNVM(ctx)
 	case profile.NPM:
-		return a.run(ctx, "npm", "install", "--global", "npm@latest")
+		return a.runResolved(ctx, "npm", "install", "--global", "npm@latest")
 	case profile.Corepack:
-		if err := a.run(ctx, "npm", "install", "--global", "corepack@latest"); err != nil {
+		if err := a.runResolved(ctx, "npm", "install", "--global", "corepack@latest"); err != nil {
 			return err
 		}
-		return a.run(ctx, "corepack", "enable")
+		return a.runResolved(ctx, "corepack", "enable")
 	case profile.PNPM:
-		return a.run(ctx, "corepack", "prepare", "pnpm@latest", "--activate")
+		return a.runResolved(ctx, "corepack", "prepare", "pnpm@latest", "--activate")
 	case profile.Yarn:
-		return a.run(ctx, "corepack", "prepare", "yarn@stable", "--activate")
+		return a.runResolved(ctx, "corepack", "prepare", "yarn@stable", "--activate")
 	case profile.Codex:
-		return a.run(ctx, "npm", "install", "--global", "@openai/codex")
+		return a.runResolved(ctx, "npm", "install", "--global", "@openai/codex@latest")
 	case profile.Bun:
-		return a.runPowerShellInstaller(ctx, source.installer)
+		return a.runResolved(ctx, "npm", "install", "--global", "bun@latest")
 	default:
 		return a.unsupported(tool)
 	}
 }
 
-func (a *WindowsAdapter) updateUserTool(ctx context.Context, tool tools.Tool, source windowsToolSource) error {
+func (a *WindowsAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error {
 	switch tool.ID {
 	case profile.Bun:
-		return a.run(ctx, "bun", "upgrade", "--stable")
+		return a.runResolved(ctx, "npm", "install", "--global", "bun@latest")
 	case profile.Node:
 		return a.runNVM(ctx)
 	default:
-		return a.installUserTool(ctx, tool, source)
+		return a.installUserTool(ctx, tool)
 	}
-}
-
-// runPowerShellInstaller keeps the PowerShell program static and provides the
-// URL as a separate argument rather than interpolating it into shell text.
-func (a *WindowsAdapter) runPowerShellInstaller(ctx context.Context, installerURL string) error {
-	if installerURL == "" {
-		return fmt.Errorf("missing Windows installer URL")
-	}
-	helper, err := os.CreateTemp("", "jb-windows-install-*.ps1")
-	if err != nil {
-		return err
-	}
-	path := helper.Name()
-	defer os.Remove(path)
-	if _, err := helper.WriteString("param([string]$InstallerURL)\nInvoke-RestMethod -Uri $InstallerURL | Invoke-Expression\n"); err != nil {
-		_ = helper.Close()
-		return err
-	}
-	if err := helper.Close(); err != nil {
-		return err
-	}
-	return a.run(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path, installerURL)
 }
 
 func (a *WindowsAdapter) run(ctx context.Context, command string, args ...string) error {
@@ -190,9 +275,21 @@ func (a *WindowsAdapter) run(ctx context.Context, command string, args ...string
 	return err
 }
 
+func (a *WindowsAdapter) runResolved(ctx context.Context, name string, args ...string) error {
+	executable, err := a.resolveExecutable(ctx, name)
+	if err != nil {
+		return err
+	}
+	return a.run(ctx, executable, args...)
+}
+
 func (a *WindowsAdapter) runNVM(ctx context.Context) error {
+	nvm, err := a.resolveExecutable(ctx, "nvm")
+	if err != nil {
+		return err
+	}
 	for _, args := range [][]string{{"install", "lts"}, {"use", "lts"}} {
-		if _, err := a.elevation.RunElevated(ctx, "nvm", args...); err != nil {
+		if _, err := a.elevation.RunElevated(ctx, nvm, args...); err != nil {
 			return err
 		}
 	}

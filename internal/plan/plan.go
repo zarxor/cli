@@ -77,6 +77,11 @@ func addDependencies(id profile.ToolID, selected map[profile.ToolID]struct{}) er
 			return err
 		}
 	}
+	for _, included := range tool.Includes {
+		if err := addDependencies(included, selected); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

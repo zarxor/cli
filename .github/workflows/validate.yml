@@ -8,6 +8,25 @@ permissions:
   contents: read
 
 jobs:
+  go:
+    name: Validate Go
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test, vet, and build
+        run: |
+          go test ./...
+          go vet ./...
+          go build ./cmd/jb
+
   validate:
     runs-on: ubuntu-latest
     strategy:

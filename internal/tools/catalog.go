@@ -16,17 +16,17 @@ type ToolID = profile.ToolID
 var Catalog = []profile.Tool{
 	{ID: profile.Git, Name: "Git"},
 	{ID: profile.GitHubCLI, Name: "GitHub CLI"},
-	{ID: profile.Docker, Name: "Docker", Dependencies: []profile.ToolID{profile.DockerBuildx, profile.DockerCompose}},
-	{ID: profile.DockerBuildx, Name: "Docker Buildx"},
-	{ID: profile.DockerCompose, Name: "Docker Compose"},
-	{ID: profile.Codex, Name: "Codex"},
-	{ID: profile.NVM, Name: "nvm"},
-	{ID: profile.Node, Name: "Node.js LTS", Dependencies: []profile.ToolID{profile.NVM, profile.NPM, profile.Corepack, profile.PNPM, profile.Yarn}},
-	{ID: profile.NPM, Name: "npm"},
-	{ID: profile.Corepack, Name: "Corepack"},
-	{ID: profile.PNPM, Name: "pnpm"},
-	{ID: profile.Yarn, Name: "Yarn"},
-	{ID: profile.Bun, Name: "Bun"},
+	{ID: profile.Docker, Name: "Docker", Includes: []profile.ToolID{profile.DockerBuildx, profile.DockerCompose}},
+	{ID: profile.DockerBuildx, Name: "Docker Buildx", Dependencies: []profile.ToolID{profile.Docker}},
+	{ID: profile.DockerCompose, Name: "Docker Compose", Dependencies: []profile.ToolID{profile.Docker}},
+	{ID: profile.NVM, Name: "nvm", Dependencies: []profile.ToolID{profile.Git}},
+	{ID: profile.Node, Name: "Node.js LTS", Includes: []profile.ToolID{profile.NPM, profile.Corepack, profile.PNPM, profile.Yarn}, Dependencies: []profile.ToolID{profile.NVM}},
+	{ID: profile.NPM, Name: "npm", Dependencies: []profile.ToolID{profile.Node}},
+	{ID: profile.Corepack, Name: "Corepack", Dependencies: []profile.ToolID{profile.NPM}},
+	{ID: profile.PNPM, Name: "pnpm", Dependencies: []profile.ToolID{profile.Corepack}},
+	{ID: profile.Yarn, Name: "Yarn", Dependencies: []profile.ToolID{profile.Corepack}},
+	{ID: profile.Codex, Name: "Codex", Dependencies: []profile.ToolID{profile.NPM}},
+	{ID: profile.Bun, Name: "Bun", Dependencies: []profile.ToolID{profile.NPM}},
 }
 
 var byID = buildLookup(Catalog)

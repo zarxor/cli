@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/zarxor/scripts/internal/plan"
+	"github.com/zarxor/scripts/internal/platform"
 	"github.com/zarxor/scripts/internal/profile"
 )
 
@@ -16,8 +17,8 @@ func TestMergeProfilesExpandsDependenciesInCatalogOrder(t *testing.T) {
 
 	want := []profile.ToolID{
 		profile.Git, profile.GitHubCLI, profile.Docker, profile.DockerBuildx,
-		profile.DockerCompose, profile.Codex, profile.NVM, profile.Node,
-		profile.NPM, profile.Corepack, profile.PNPM, profile.Yarn, profile.Bun,
+		profile.DockerCompose, profile.NVM, profile.Node, profile.NPM,
+		profile.Corepack, profile.PNPM, profile.Yarn, profile.Codex, profile.Bun,
 	}
 	if gotIDs := toolIDs(got); !reflect.DeepEqual(gotIDs, want) {
 		t.Fatalf("MergeProfiles() IDs = %v, want %v", gotIDs, want)
@@ -96,6 +97,31 @@ func TestDependencyOrderRejectsCycles(t *testing.T) {
 
 	if _, err := plan.DependencyOrder(selected); err == nil {
 		t.Fatal("DependencyOrder() error = nil, want cycle error")
+	}
+}
+
+func TestFreshDevelopmentOrderInstallsProvidersBeforeComponentsOnEveryPlatform(t *testing.T) {
+	planned, err := plan.MergeProfiles([]profile.Profile{profile.DevelopmentProfile()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []profile.ToolID{
+		profile.Git, profile.GitHubCLI,
+		profile.Docker, profile.DockerBuildx, profile.DockerCompose,
+		profile.NVM, profile.Node, profile.NPM, profile.Corepack,
+		profile.PNPM, profile.Yarn, profile.Codex, profile.Bun,
+	}
+	for _, host := range []platform.OS{platform.Debian, platform.Arch, platform.Windows} {
+		t.Run(string(host), func(t *testing.T) {
+			got, err := plan.DependencyOrder(planned)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotIDs := toolIDs(got); !reflect.DeepEqual(gotIDs, want) {
+				t.Fatalf("DependencyOrder() IDs = %v, want %v", gotIDs, want)
+			}
+		})
 	}
 }
 

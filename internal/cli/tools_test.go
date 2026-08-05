@@ -137,14 +137,14 @@ func TestLinuxConfigUsesInvokingSudoUserAndLiveReleaseMetadata(t *testing.T) {
 		if name != "johan" {
 			t.Fatalf("lookup name = %q, want johan", name)
 		}
-		return &user.User{Uid: "1000", HomeDir: "/home/johan"}, nil
+		return &user.User{Username: "johan", Uid: "1000", Gid: "1000", HomeDir: "/home/johan"}, nil
 	}
 
 	got, err := linuxConfigFrom("ID=ubuntu\nVERSION_CODENAME=noble\n", "arm64", root, "johan", lookup)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Root || got.Home != "/home/johan" || got.Distribution != "ubuntu" || got.Codename != "noble" || got.Architecture != "arm64" {
+	if !got.Root || got.Home != "/home/johan" || got.InvokingUser != "johan" || got.InvokingUID != 1000 || got.InvokingGID != 1000 || got.Distribution != "ubuntu" || got.Codename != "noble" || got.Architecture != "arm64" {
 		t.Fatalf("Linux config = %#v, want root with invoking home and live ubuntu metadata", got)
 	}
 }
@@ -154,6 +154,17 @@ func TestLinuxConfigRejectsUnsupportedArchitecture(t *testing.T) {
 	_, err := linuxConfigFrom("ID=debian\nVERSION_CODENAME=trixie\n", "mips", current, "", nil)
 	if err == nil || !strings.Contains(err.Error(), `unsupported Linux architecture "mips"`) {
 		t.Fatalf("error = %v, want unsupported architecture", err)
+	}
+}
+
+func TestLinuxConfigUsesUbuntuCodenameFallback(t *testing.T) {
+	current := &user.User{Username: "johan", Uid: "1000", Gid: "1000", HomeDir: "/home/johan"}
+	got, err := linuxConfigFrom("ID=linuxmint\nUBUNTU_CODENAME=noble\n", "amd64", current, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Codename != "noble" {
+		t.Fatalf("Codename = %q, want Ubuntu fallback noble", got.Codename)
 	}
 }
 

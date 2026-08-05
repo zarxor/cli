@@ -9,6 +9,7 @@ type ProfileName string
 type Tool struct {
 	ID           ToolID
 	Name         string
+	Includes     []ToolID
 	Dependencies []ToolID
 }
 

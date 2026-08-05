@@ -32,6 +32,24 @@ func TestDetectFromWindows(t *testing.T) {
 	}
 }
 
+func TestDetectFromDirectDistributionIDs(t *testing.T) {
+	tests := []struct {
+		id   string
+		want OS
+	}{{"debian", Debian}, {"ubuntu", Debian}, {"arch", Arch}}
+	for _, test := range tests {
+		t.Run(test.id, func(t *testing.T) {
+			got, err := DetectFrom("linux", []byte("ID="+test.id+"\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("DetectFrom() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestDetectFromRejectsUnsupportedLinux(t *testing.T) {
 	_, err := DetectFrom("linux", []byte("ID=fedora\nID_LIKE=rhel fedora\n"))
 	if err == nil {

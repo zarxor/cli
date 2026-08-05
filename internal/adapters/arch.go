@@ -10,7 +10,7 @@ import (
 )
 
 // ArchAdapter installs distribution packages through pacman and reuses the
-// official user-level installers shared by Linux platforms.
+// integrity-checking package providers shared by Linux platforms.
 type ArchAdapter struct{ linuxAdapter }
 
 func NewArchAdapter(commandRunner runner.Runner, elevation runner.Elevation, configs ...LinuxConfig) Adapter {
@@ -43,11 +43,6 @@ func (a *ArchAdapter) Install(ctx context.Context, tool tools.Tool) error {
 			return a.system(ctx, "systemctl", "enable", "--now", "docker.service")
 		}
 		return nil
-	}
-	if tool.ID == profile.Bun {
-		if err := a.system(ctx, "pacman", "-Syu", "--noconfirm", "--needed", "unzip"); err != nil {
-			return err
-		}
 	}
 	return a.installUserTool(ctx, tool)
 }

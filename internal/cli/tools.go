@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -177,8 +178,11 @@ func (s *toolsService) Run(ctx context.Context, request ToolsRequest) error {
 }
 
 func requestedTools(action install.Action, profiles []profile.Profile, only []tools.ToolID) ([]tools.Tool, error) {
-	if action == install.Update && len(profiles) == 0 && len(only) == 0 {
-		return append([]tools.Tool(nil), tools.Catalog...), nil
+	if action == install.Update && len(profiles) == 0 {
+		if len(only) == 0 {
+			return append([]tools.Tool(nil), tools.Catalog...), nil
+		}
+		return tools.ResolveTools(only)
 	}
 	return plan.MergeProfiles(profiles, only)
 }
@@ -240,6 +244,14 @@ func linuxConfigFrom(release, goarch string, currentUser *user.User, sudoUser st
 	if invokingUser.HomeDir == "" {
 		return adapters.LinuxConfig{}, fmt.Errorf("invoking user home is empty")
 	}
+	uid, err := strconv.Atoi(invokingUser.Uid)
+	if err != nil {
+		return adapters.LinuxConfig{}, fmt.Errorf("parse invoking user UID %q: %w", invokingUser.Uid, err)
+	}
+	gid, err := strconv.Atoi(invokingUser.Gid)
+	if err != nil {
+		return adapters.LinuxConfig{}, fmt.Errorf("parse invoking user GID %q: %w", invokingUser.Gid, err)
+	}
 	codename := metadata["VERSION_CODENAME"]
 	if codename == "" {
 		codename = metadata["UBUNTU_CODENAME"]
@@ -247,6 +259,9 @@ func linuxConfigFrom(release, goarch string, currentUser *user.User, sudoUser st
 	return adapters.LinuxConfig{
 		Root:         root,
 		Home:         invokingUser.HomeDir,
+		InvokingUser: invokingUser.Username,
+		InvokingUID:  uid,
+		InvokingGID:  gid,
 		Distribution: metadata["ID"],
 		Codename:     codename,
 		Architecture: architecture,

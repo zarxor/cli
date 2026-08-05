@@ -3,6 +3,7 @@ package adapters
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,6 +34,9 @@ type LinuxConfig struct {
 	Root         bool
 	Home         string
 	TempDir      string
+	InvokingUser string
+	InvokingUID  int
+	InvokingGID  int
 	Distribution string
 	Codename     string
 	Architecture string
@@ -47,9 +51,7 @@ var DockerConflictCandidates = []string{
 
 const (
 	githubCLIKeyURL = "https://cli.github.com/packages/githubcli-archive-keyring.gpg"
-	codexInstaller  = "https://chatgpt.com/codex/install.sh"
-	nvmInstaller    = "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh"
-	bunInstaller    = "https://bun.sh/install"
+	nvmPinnedCommit = "d025499c7f5466d0dc0a324dc98eab72cce8377d" // nvm v0.40.3
 )
 
 type linuxAdapter struct {
@@ -150,11 +152,6 @@ func (a *DebianAdapter) Install(ctx context.Context, tool tools.Tool) error {
 			return a.system(ctx, "systemctl", "enable", "--now", "docker.service")
 		}
 		return nil
-	}
-	if tool.ID == profile.Bun {
-		if err := a.system(ctx, "apt-get", "install", "-y", "unzip"); err != nil {
-			return err
-		}
 	}
 	return a.installUserTool(ctx, tool)
 }
@@ -335,6 +332,21 @@ func createTemporary(directory, pattern, content string) (string, error) {
 }
 
 func (a linuxAdapter) detect(ctx context.Context, tool tools.Tool) (detect.Detection, error) {
+	detection, err := a.detectCurrent(ctx, tool)
+	if err != nil || !detection.Installed {
+		return detection, err
+	}
+	candidate, supported, err := a.userToolCandidate(ctx, tool.ID)
+	if err != nil {
+		return detect.Detection{}, err
+	}
+	if supported {
+		detection.Candidate = candidate
+	}
+	return detection, nil
+}
+
+func (a linuxAdapter) detectCurrent(ctx context.Context, tool tools.Tool) (detect.Detection, error) {
 	if tool.ID == profile.NVM {
 		return a.detectNVM(ctx)
 	}
@@ -350,9 +362,51 @@ func (a linuxAdapter) detect(ctx context.Context, tool tools.Tool) (detect.Detec
 	}
 	result, err := a.runner.Run(ctx, command, args...)
 	if err != nil {
+		if expectedMissingComponent(tool.ID, result) {
+			return detect.Detection{Installed: false}, nil
+		}
 		return detect.Detection{}, err
 	}
 	return detect.Detection{Installed: true, Current: detect.ParseVersion(result.Stdout, result.Stderr)}, nil
+}
+
+func (a linuxAdapter) userToolCandidate(ctx context.Context, id tools.ToolID) (string, bool, error) {
+	switch id {
+	case profile.NVM:
+		version, err := a.latestNVMVersion(ctx)
+		return version, true, err
+	case profile.Node:
+		result, err := a.runner.Run(ctx, "curl", "-fsSL", "https://nodejs.org/dist/index.json")
+		if err != nil {
+			return "", true, err
+		}
+		var releases []struct {
+			Version string          `json:"version"`
+			LTS     json.RawMessage `json:"lts"`
+		}
+		if err := json.Unmarshal([]byte(result.Stdout), &releases); err != nil {
+			return "", true, fmt.Errorf("parse Node.js release metadata: %w", err)
+		}
+		for _, release := range releases {
+			var ltsName string
+			if json.Unmarshal(release.LTS, &ltsName) == nil && ltsName != "" {
+				return release.Version, true, nil
+			}
+		}
+		return "", true, fmt.Errorf("Node.js release metadata contains no LTS version")
+	case profile.NPM, profile.Corepack, profile.PNPM, profile.Yarn, profile.Codex, profile.Bun:
+		packageName := map[tools.ToolID]string{
+			profile.NPM: "npm", profile.Corepack: "corepack", profile.PNPM: "pnpm",
+			profile.Yarn: "@yarnpkg/cli-dist", profile.Codex: "@openai/codex", profile.Bun: "bun",
+		}[id]
+		result, err := a.runNVMExecutableCommand(ctx, "npm", "view", packageName, "version")
+		if err != nil {
+			return "", true, err
+		}
+		return detect.ParseVersion(result.Stdout, result.Stderr), true, nil
+	default:
+		return "", false, nil
+	}
 }
 
 func (a linuxAdapter) verify(ctx context.Context, tool tools.Tool) error {
@@ -390,12 +444,9 @@ func (a linuxAdapter) versionCommand(id tools.ToolID) (string, []string, error) 
 func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) error {
 	switch tool.ID {
 	case profile.Codex:
-		if err := a.runInstaller(ctx, "codex", codexInstaller, "env", "HOME="+a.config.Home, "sh"); err != nil {
-			return err
-		}
-		return a.ensureProfileBlock("paths", `export PATH="$HOME/.local/bin:$PATH"`)
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "@openai/codex@latest")
 	case profile.NVM:
-		return a.installNVM(ctx, nvmInstaller)
+		return a.installNVM(ctx, "v0.40.3")
 	case profile.Node:
 		return a.runNVM(ctx, "install", "--lts", "--latest-npm")
 	case profile.NPM:
@@ -410,10 +461,7 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 	case profile.Yarn:
 		return a.runNVMExecutable(ctx, "corepack", "prepare", "yarn@stable", "--activate")
 	case profile.Bun:
-		if err := a.runInstaller(ctx, "bun", bunInstaller, "env", "HOME="+a.config.Home, "BUN_INSTALL="+filepath.Join(a.config.Home, ".bun"), "bash"); err != nil {
-			return err
-		}
-		return a.ensureProfileBlock("bun", "export BUN_INSTALL=\"$HOME/.bun\"\nexport PATH=\"$BUN_INSTALL/bin:$PATH\"")
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "bun@latest")
 	default:
 		return fmt.Errorf("unsupported tool %q", tool.ID)
 	}
@@ -422,13 +470,13 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 func (a linuxAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error {
 	switch tool.ID {
 	case profile.Bun:
-		return a.userRun(ctx, filepath.Join(a.config.Home, ".bun", "bin", "bun"), "upgrade", "--stable")
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "bun@latest")
 	case profile.NVM:
-		installerURL, err := a.latestNVMInstaller(ctx)
+		version, err := a.latestNVMVersion(ctx)
 		if err != nil {
 			return err
 		}
-		return a.installNVM(ctx, installerURL)
+		return a.updateNVM(ctx, version)
 	case profile.Node:
 		return a.runNVM(ctx, "install", "--lts", "--latest-npm")
 	default:
@@ -436,14 +484,29 @@ func (a linuxAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error
 	}
 }
 
-func (a linuxAdapter) installNVM(ctx context.Context, installerURL string) error {
-	if err := a.runInstaller(ctx, "nvm", installerURL, "env", "HOME="+a.config.Home, "PROFILE=/dev/null", "NVM_DIR="+filepath.Join(a.config.Home, ".nvm"), "bash"); err != nil {
+func (a linuxAdapter) installNVM(ctx context.Context, version string) error {
+	nvmDir := filepath.Join(a.config.Home, ".nvm")
+	if err := a.userRun(ctx, "git", "clone", "--branch", version, "--depth", "1", "https://github.com/nvm-sh/nvm.git", nvmDir); err != nil {
 		return err
 	}
-	return a.ensureProfileBlock("nvm", "export NVM_DIR=\"$HOME/.nvm\"\n[ -s \"$NVM_DIR/nvm.sh\" ] && \\. \"$NVM_DIR/nvm.sh\"\n[ -s \"$NVM_DIR/bash_completion\" ] && \\. \"$NVM_DIR/bash_completion\"")
+	if err := a.userRun(ctx, "git", "-C", nvmDir, "checkout", "--detach", nvmPinnedCommit); err != nil {
+		return err
+	}
+	return a.ensureProfileBlock(ctx, "nvm", "export NVM_DIR=\"$HOME/.nvm\"\n[ -s \"$NVM_DIR/nvm.sh\" ] && \\. \"$NVM_DIR/nvm.sh\"\n[ -s \"$NVM_DIR/bash_completion\" ] && \\. \"$NVM_DIR/bash_completion\"")
 }
 
-func (a linuxAdapter) latestNVMInstaller(ctx context.Context) (string, error) {
+func (a linuxAdapter) updateNVM(ctx context.Context, version string) error {
+	nvmDir := filepath.Join(a.config.Home, ".nvm")
+	if err := a.userRun(ctx, "git", "-C", nvmDir, "fetch", "--depth", "1", "origin", "tag", version); err != nil {
+		return err
+	}
+	if err := a.userRun(ctx, "git", "-C", nvmDir, "checkout", "--detach", version); err != nil {
+		return err
+	}
+	return a.ensureProfileBlock(ctx, "nvm", "export NVM_DIR=\"$HOME/.nvm\"\n[ -s \"$NVM_DIR/nvm.sh\" ] && \\. \"$NVM_DIR/nvm.sh\"\n[ -s \"$NVM_DIR/bash_completion\" ] && \\. \"$NVM_DIR/bash_completion\"")
+}
+
+func (a linuxAdapter) latestNVMVersion(ctx context.Context) (string, error) {
 	result, err := a.runner.Run(ctx, "git", "ls-remote", "--tags", "--refs", "https://github.com/nvm-sh/nvm.git", "v*")
 	if err != nil {
 		return "", err
@@ -465,7 +528,7 @@ func (a linuxAdapter) latestNVMInstaller(ctx context.Context) (string, error) {
 	if latest == "" {
 		return "", fmt.Errorf("could not resolve a stable nvm release")
 	}
-	return "https://raw.githubusercontent.com/nvm-sh/nvm/" + latest + "/install.sh", nil
+	return latest, nil
 }
 
 func stableNVMVersion(tag string) ([3]int, bool) {
@@ -493,17 +556,6 @@ func newerVersion(candidate, current [3]int) bool {
 	return false
 }
 
-func (a linuxAdapter) runInstaller(ctx context.Context, name, url, command string, prefixArgs ...string) error {
-	installer, err := a.downloadTemporary(ctx, "jb-"+name+"-install-*", url)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(installer)
-	args := append(append([]string(nil), prefixArgs...), installer)
-	_, err = a.runner.Run(ctx, command, args...)
-	return err
-}
-
 func (a linuxAdapter) runNVM(ctx context.Context, args ...string) error {
 	_, err := a.runNVMCommand(ctx, args...)
 	return err
@@ -515,14 +567,20 @@ func (a linuxAdapter) runNVMCommand(ctx context.Context, args ...string) (runner
 		return runner.Result{}, err
 	}
 	defer os.Remove(helper)
-	commandArgs := []string{"HOME=" + a.config.Home, "NVM_DIR=" + filepath.Join(a.config.Home, ".nvm"), "sh", helper}
-	return a.runner.Run(ctx, "env", append(commandArgs, args...)...)
+	if err := os.Chmod(helper, 0644); err != nil {
+		return runner.Result{}, err
+	}
+	return a.runUserCommand(ctx, []string{"NVM_DIR=" + filepath.Join(a.config.Home, ".nvm")}, "sh", append([]string{helper}, args...)...)
 }
 
 func (a linuxAdapter) runNVMExecutable(ctx context.Context, executable string, args ...string) error {
-	nvmExec := filepath.Join(a.config.Home, ".nvm", "nvm-exec")
-	_, err := a.runner.Run(ctx, "env", append([]string{"HOME=" + a.config.Home, "NVM_DIR=" + filepath.Join(a.config.Home, ".nvm"), nvmExec, executable}, args...)...)
+	_, err := a.runNVMExecutableCommand(ctx, executable, args...)
 	return err
+}
+
+func (a linuxAdapter) runNVMExecutableCommand(ctx context.Context, executable string, args ...string) (runner.Result, error) {
+	nvmExec := filepath.Join(a.config.Home, ".nvm", "nvm-exec")
+	return a.runUserCommand(ctx, []string{"NVM_DIR=" + filepath.Join(a.config.Home, ".nvm")}, nvmExec, append([]string{executable}, args...)...)
 }
 
 func (a linuxAdapter) detectNVM(ctx context.Context) (detect.Detection, error) {
@@ -542,11 +600,32 @@ func (a linuxAdapter) detectNVMExecutable(ctx context.Context, executable string
 	if _, err := a.runner.LookPath(ctx, nvmExec); err != nil {
 		return detect.Detection{Installed: false}, nil
 	}
-	result, err := a.runner.Run(ctx, "env", "HOME="+a.config.Home, "NVM_DIR="+filepath.Join(a.config.Home, ".nvm"), nvmExec, executable, "--version")
+	result, err := a.runUserCommand(ctx, []string{"NVM_DIR=" + filepath.Join(a.config.Home, ".nvm")}, nvmExec, executable, "--version")
 	if err != nil {
+		if expectedMissingComponentExecutable(executable, result) {
+			return detect.Detection{Installed: false}, nil
+		}
 		return detect.Detection{}, err
 	}
 	return detect.Detection{Installed: true, Current: detect.ParseVersion(result.Stdout, result.Stderr)}, nil
+}
+
+func expectedMissingComponent(id tools.ToolID, result runner.Result) bool {
+	if id != profile.DockerBuildx && id != profile.DockerCompose {
+		return false
+	}
+	message := strings.ToLower(result.Stdout + "\n" + result.Stderr)
+	return strings.Contains(message, "is not a docker command") || strings.Contains(message, "unknown command")
+}
+
+func expectedMissingComponentExecutable(executable string, result runner.Result) bool {
+	switch executable {
+	case "node", "npm", "corepack", "pnpm", "yarn", "codex", "bun":
+		message := strings.ToLower(result.Stdout + "\n" + result.Stderr)
+		return result.ExitCode == 127 || strings.Contains(message, "not found") || strings.Contains(message, "no such file") || strings.Contains(message, "not recognized")
+	default:
+		return false
+	}
 }
 
 func nvmExecutable(id tools.ToolID) (string, bool) {
@@ -561,17 +640,31 @@ func nvmExecutable(id tools.ToolID) (string, bool) {
 		return "pnpm", true
 	case profile.Yarn:
 		return "yarn", true
+	case profile.Codex:
+		return "codex", true
+	case profile.Bun:
+		return "bun", true
 	default:
 		return "", false
 	}
 }
 
 func (a linuxAdapter) userRun(ctx context.Context, command string, args ...string) error {
-	_, err := a.runner.Run(ctx, "env", append([]string{"HOME=" + a.config.Home, command}, args...)...)
+	_, err := a.runUserCommand(ctx, nil, command, args...)
 	return err
 }
 
-func (a linuxAdapter) ensureProfileBlock(name, content string) error {
+func (a linuxAdapter) runUserCommand(ctx context.Context, environment []string, command string, args ...string) (runner.Result, error) {
+	commandArgs := append([]string{"HOME=" + a.config.Home}, environment...)
+	commandArgs = append(commandArgs, command)
+	commandArgs = append(commandArgs, args...)
+	if a.config.Root && a.config.InvokingUser != "" && a.config.InvokingUser != "root" {
+		return a.runner.Run(ctx, "sudo", append([]string{"-H", "-u", a.config.InvokingUser, "env"}, commandArgs...)...)
+	}
+	return a.runner.Run(ctx, "env", commandArgs...)
+}
+
+func (a linuxAdapter) ensureProfileBlock(ctx context.Context, name, content string) error {
 	profilePath := filepath.Join(a.config.Home, ".bashrc")
 	if err := os.MkdirAll(filepath.Dir(profilePath), 0700); err != nil {
 		return err
@@ -610,6 +703,12 @@ func (a linuxAdapter) ensureProfileBlock(name, content string) error {
 	if err := os.Rename(temporary, profilePath); err != nil {
 		_ = os.Remove(temporary)
 		return err
+	}
+	if a.config.Root && a.config.InvokingUser != "" && a.config.InvokingUser != "root" {
+		owner := fmt.Sprintf("%d:%d", a.config.InvokingUID, a.config.InvokingGID)
+		if _, err := a.runner.Run(ctx, "chown", owner, profilePath); err != nil {
+			return err
+		}
 	}
 	return nil
 }

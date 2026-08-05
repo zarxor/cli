@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zarxor/scripts/internal/detect"
 	"github.com/zarxor/scripts/internal/profile"
 	"github.com/zarxor/scripts/internal/runner"
 	"github.com/zarxor/scripts/internal/tools"
@@ -174,39 +175,73 @@ func TestArchInstallAndUpdateUseNeededPacmanTransactions(t *testing.T) {
 	}
 }
 
-func TestArchBunInstallsUnzipWithoutElevatingInstaller(t *testing.T) {
+func TestArchBunUsesIntegrityCheckedNPMProviderWithoutSystemMutation(t *testing.T) {
 	fixture := runner.NewFixture()
-	adapter := NewArchAdapter(fixture, &fixtureElevation{fixture: fixture}, LinuxConfig{Root: false, Home: t.TempDir(), TempDir: t.TempDir()})
+	home := t.TempDir()
+	adapter := NewArchAdapter(fixture, &fixtureElevation{fixture: fixture}, LinuxConfig{Root: false, Home: home, TempDir: t.TempDir()})
 
 	if err := adapter.Install(context.Background(), mustTool(t, profile.Bun)); err != nil {
 		t.Fatal(err)
 	}
 
-	assertHasCommand(t, fixture.Commands, "sudo", "pacman", "-Syu", "--noconfirm", "--needed", "unzip")
-	installer := curlDestination(t, fixture.Commands, bunInstaller)
-	if !strings.HasPrefix(filepath.Base(installer), "jb-bun-install-") {
-		t.Fatalf("Bun installer path = %q", installer)
-	}
-	assertTemporaryRemoved(t, installer)
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), filepath.Join(home, ".nvm", "nvm-exec"), "npm", "install", "--global", "bun@latest")
 	for _, command := range fixture.Commands {
-		if command.Command == "sudo" && slicesContain(command.Args, "jb-bun-install.sh") {
-			t.Fatalf("Bun installer was elevated: %#v", command)
+		if command.Command == "sudo" || command.Command == "curl" {
+			t.Fatalf("Bun package install used an elevated or remote-script command: %#v", command)
 		}
 	}
 }
 
-func TestDebianBunInstallsUnzipBeforeUserInstaller(t *testing.T) {
+func TestDebianBunUsesIntegrityCheckedNPMProvider(t *testing.T) {
 	fixture := runner.NewFixture()
-	adapter := NewDebianAdapter(fixture, &fixtureElevation{fixture: fixture}, LinuxConfig{Root: false, Home: t.TempDir(), TempDir: t.TempDir()})
+	home := t.TempDir()
+	adapter := NewDebianAdapter(fixture, &fixtureElevation{fixture: fixture}, LinuxConfig{Root: false, Home: home, TempDir: t.TempDir()})
 
 	if err := adapter.Install(context.Background(), mustTool(t, profile.Bun)); err != nil {
 		t.Fatal(err)
 	}
 
-	want := runner.Command{Command: "sudo", Args: []string{"apt-get", "install", "-y", "unzip"}}
-	if len(fixture.Commands) == 0 || !reflect.DeepEqual(fixture.Commands[0], want) {
-		t.Fatalf("first command = %#v, want %#v", fixture.Commands[0], want)
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), filepath.Join(home, ".nvm", "nvm-exec"), "npm", "install", "--global", "bun@latest")
+}
+
+func TestLinuxUserToolInstallsAvoidUnverifiedRemoteScripts(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+
+	for _, id := range []profile.ToolID{profile.Codex, profile.NVM, profile.Bun} {
+		if err := adapter.Install(context.Background(), mustTool(t, id)); err != nil {
+			t.Fatal(err)
+		}
 	}
+
+	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), nvmExec, "npm", "install", "--global", "@openai/codex@latest")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "git", "clone", "--branch", "v0.40.3", "--depth", "1", "https://github.com/nvm-sh/nvm.git", filepath.Join(home, ".nvm"))
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "git", "-C", filepath.Join(home, ".nvm"), "checkout", "--detach", "d025499c7f5466d0dc0a324dc98eab72cce8377d")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), nvmExec, "npm", "install", "--global", "bun@latest")
+	for _, command := range fixture.Commands {
+		if command.Command == "curl" {
+			t.Fatalf("user tool install downloaded an executable script: %#v", command)
+		}
+	}
+}
+
+func TestSudoInvocationRunsUserOperationsAsInvokingUserAndPreservesProfileOwnership(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	config := LinuxConfig{
+		Root: true, Home: home, TempDir: t.TempDir(),
+		InvokingUser: "johan", InvokingUID: 1000, InvokingGID: 1000,
+	}
+	adapter := NewArchAdapter(fixture, fixture, config)
+
+	if err := adapter.Install(context.Background(), mustTool(t, profile.NVM)); err != nil {
+		t.Fatal(err)
+	}
+
+	assertHasCommand(t, fixture.Commands, "sudo", "-H", "-u", "johan", "env", "HOME="+home, "git", "clone", "--branch", "v0.40.3", "--depth", "1", "https://github.com/nvm-sh/nvm.git", filepath.Join(home, ".nvm"))
+	assertHasCommand(t, fixture.Commands, "chown", "1000:1000", filepath.Join(home, ".bashrc"))
 }
 
 func TestLinuxProfileBlocksAreIdempotent(t *testing.T) {
@@ -260,6 +295,97 @@ func TestDebianDetectsCandidatePackageVersion(t *testing.T) {
 	}
 	if got.Candidate != "1:2.48.0-1" {
 		t.Fatalf("candidate = %q, want 1:2.48.0-1", got.Candidate)
+	}
+}
+
+func TestDebianTreatsMissingDockerComponentAsAbsent(t *testing.T) {
+	fixture := runner.NewFixture()
+	fixture.LookPaths["docker"] = "/usr/bin/docker"
+	fixture.Set("docker", []string{"buildx", "version"}, runner.Result{Stderr: "docker: 'buildx' is not a docker command\n", ExitCode: 1}, errors.New("exit status 1"))
+	fixture.Set("apt-cache", []string{"policy", "docker-buildx-plugin"}, runner.Result{Stdout: "Candidate: 0.24.0-1\n"}, nil)
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: t.TempDir(), TempDir: t.TempDir()})
+
+	got, err := adapter.Detect(context.Background(), mustTool(t, profile.DockerBuildx))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (detect.Detection{Installed: false, Candidate: "0.24.0-1"}) {
+		t.Fatalf("Detect() = %#v, want absent Buildx with package candidate", got)
+	}
+}
+
+func TestDebianPreservesGenuineDockerDetectionFailure(t *testing.T) {
+	fixture := runner.NewFixture()
+	fixture.LookPaths["docker"] = "/usr/bin/docker"
+	wantErr := errors.New("permission denied")
+	fixture.Set("docker", []string{"compose", "version"}, runner.Result{Stderr: "permission denied\n", ExitCode: 1}, wantErr)
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: t.TempDir(), TempDir: t.TempDir()})
+
+	_, err := adapter.Detect(context.Background(), mustTool(t, profile.DockerCompose))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Detect() error = %v, want genuine command failure", err)
+	}
+}
+
+func TestLinuxTreatsMissingNVMManagedComponentAsAbsent(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+	fixture.LookPaths[nvmExec] = nvmExec
+	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "pnpm", "--version"}
+	fixture.Set("env", args, runner.Result{Stderr: "pnpm: not found\n", ExitCode: 127}, errors.New("exit status 127"))
+	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+
+	got, err := adapter.Detect(context.Background(), mustTool(t, profile.PNPM))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Installed {
+		t.Fatalf("Detect() = %#v, want absent pnpm", got)
+	}
+}
+
+func TestLinuxDetectsCandidatesForInstalledUserTools(t *testing.T) {
+	home := t.TempDir()
+	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+	fixture := runner.NewFixture()
+	fixture.LookPaths[nvmExec] = nvmExec
+	fixture.Set("git", []string{"ls-remote", "--tags", "--refs", "https://github.com/nvm-sh/nvm.git", "v*"}, runner.Result{Stdout: "aaa\trefs/tags/v0.40.3\nbbb\trefs/tags/v0.40.4\n"}, nil)
+	fixture.Set("curl", []string{"-fsSL", "https://nodejs.org/dist/index.json"}, runner.Result{Stdout: `[{"version":"v26.1.0","lts":false},{"version":"v24.5.0","lts":"Krypton"}]`}, nil)
+
+	packages := map[profile.ToolID]string{
+		profile.NPM: "npm", profile.Corepack: "corepack", profile.PNPM: "pnpm",
+		profile.Yarn: "@yarnpkg/cli-dist", profile.Codex: "@openai/codex", profile.Bun: "bun",
+	}
+	for id, packageName := range packages {
+		executable, _ := nvmExecutable(id)
+		currentArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, executable, "--version"}
+		fixture.Set("env", currentArgs, runner.Result{Stdout: "1.0.0\n"}, nil)
+		candidateArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "npm", "view", packageName, "version"}
+		fixture.Set("env", candidateArgs, runner.Result{Stdout: "2.0.0\n"}, nil)
+	}
+	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "node", "--version"}, runner.Result{Stdout: "v22.0.0\n"}, nil)
+
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+	cases := []struct {
+		id   profile.ToolID
+		want string
+	}{
+		{profile.NVM, "v0.40.4"}, {profile.Node, "v24.5.0"},
+		{profile.NPM, "2.0.0"}, {profile.Corepack, "2.0.0"},
+		{profile.PNPM, "2.0.0"}, {profile.Yarn, "2.0.0"},
+		{profile.Codex, "2.0.0"}, {profile.Bun, "2.0.0"},
+	}
+	for _, test := range cases {
+		t.Run(string(test.id), func(t *testing.T) {
+			got, err := adapter.Detect(context.Background(), mustTool(t, test.id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !got.Installed || got.Candidate != test.want {
+				t.Fatalf("Detect() = %#v, want installed candidate %q", got, test.want)
+			}
+		})
 	}
 }
 
@@ -328,11 +454,11 @@ func TestDebianDockerUpdateMigratesConflictsToCompleteOfficialPackages(t *testin
 	}
 }
 
-func TestInstallerUsesUniqueTemporaryFileWithoutTouchingPreexistingName(t *testing.T) {
+func TestCodexPackageInstallDoesNotTouchPredictableScriptPath(t *testing.T) {
 	fixture := runner.NewFixture()
 	temp := t.TempDir()
 	home := t.TempDir()
-	predictable := filepath.Join(temp, "jb-codex-install.sh")
+	predictable := filepath.Join(temp, "attacker-owned-marker")
 	if err := os.WriteFile(predictable, []byte("attacker-owned marker"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -349,12 +475,10 @@ func TestInstallerUsesUniqueTemporaryFileWithoutTouchingPreexistingName(t *testi
 	if string(marker) != "attacker-owned marker" {
 		t.Fatalf("pre-existing predictable file was changed to %q", marker)
 	}
-	destination := curlDestination(t, fixture.Commands, codexInstaller)
-	if destination == predictable || !strings.HasPrefix(filepath.Base(destination), "jb-codex-install-") {
-		t.Fatalf("installer destination = %q, want unique jb-codex-install-* path", destination)
-	}
-	if _, err := os.Stat(destination); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("unique installer cleanup error = %v", err)
+	for _, command := range fixture.Commands {
+		if command.Command == "curl" {
+			t.Fatalf("Codex package install downloaded a script: %#v", command)
+		}
 	}
 }
 
@@ -393,12 +517,12 @@ func TestCleanProcessDetectsCodexAndNodeToolsFromConfiguredHome(t *testing.T) {
 	fixture := runner.NewFixture()
 	home := t.TempDir()
 	temp := t.TempDir()
-	codex := filepath.Join(home, ".local", "bin", "codex")
 	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
-	fixture.LookPaths[codex] = codex
 	fixture.LookPaths[nvmExec] = nvmExec
-	fixture.Set(codex, []string{"--version"}, runner.Result{Stdout: "codex-cli 1.2.3\n"}, nil)
+	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "codex", "--version"}, runner.Result{Stdout: "codex-cli 1.2.3\n"}, nil)
 	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "node", "--version"}, runner.Result{Stdout: "v24.1.0\n"}, nil)
+	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "npm", "view", "@openai/codex", "version"}, runner.Result{Stdout: "1.2.4\n"}, nil)
+	fixture.Set("curl", []string{"-fsSL", "https://nodejs.org/dist/index.json"}, runner.Result{Stdout: `[{"version":"v24.1.0","lts":"Krypton"}]`}, nil)
 	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: temp})
 
 	for _, test := range []struct {
@@ -415,23 +539,23 @@ func TestCleanProcessDetectsCodexAndNodeToolsFromConfiguredHome(t *testing.T) {
 	}
 }
 
-func TestInstallerFailurePreservesExitStatusAndCleansTemporaryFile(t *testing.T) {
+func TestUserPackageFailurePreservesExitStatus(t *testing.T) {
 	fixture := runner.NewFixture()
 	temp := t.TempDir()
 	wantErr := &fixtureExitError{status: 23}
 	home := t.TempDir()
-	failing := &installerFailureRunner{fixture: fixture, err: wantErr, status: 23, namePrefix: "jb-codex-install-"}
-	adapter := NewDebianAdapter(failing, fixture, LinuxConfig{Root: true, Home: home, TempDir: temp})
+	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), nvmExec, "npm", "install", "--global", "@openai/codex@latest"}
+	fixture.Set("env", args, runner.Result{ExitCode: 23}, wantErr)
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: temp})
 
 	err := adapter.Install(context.Background(), mustTool(t, profile.Codex))
 	if !errors.Is(err, wantErr) || err.(*fixtureExitError).ExitCode() != 23 {
 		t.Fatalf("Install() error = %#v, want unchanged exit status 23", err)
 	}
-	installer := curlDestination(t, fixture.Commands, codexInstaller)
-	assertTemporaryRemoved(t, installer)
 }
 
-func TestInstallerNVMUpdateResolvesLatestStableReleaseAndCleansTemporaryFile(t *testing.T) {
+func TestNVMUpdateResolvesLatestStableReleaseWithoutRemoteScript(t *testing.T) {
 	fixture := runner.NewFixture()
 	temp := t.TempDir()
 	home := t.TempDir()
@@ -442,8 +566,13 @@ func TestInstallerNVMUpdateResolvesLatestStableReleaseAndCleansTemporaryFile(t *
 		t.Fatal(err)
 	}
 
-	installer := curlDestination(t, fixture.Commands, "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.10/install.sh")
-	assertTemporaryRemoved(t, installer)
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "git", "-C", filepath.Join(home, ".nvm"), "fetch", "--depth", "1", "origin", "tag", "v0.40.10")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "git", "-C", filepath.Join(home, ".nvm"), "checkout", "--detach", "v0.40.10")
+	for _, command := range fixture.Commands {
+		if command.Command == "curl" {
+			t.Fatalf("NVM update downloaded an executable script: %#v", command)
+		}
+	}
 }
 
 type fixtureExitError struct{ status int }
@@ -542,32 +671,6 @@ func (r *fileCapturingRunner) Run(ctx context.Context, command string, args ...s
 		}
 	}
 	return r.fixture.Run(ctx, command, args...)
-}
-
-type installerFailureRunner struct {
-	fixture    *runner.Fixture
-	err        error
-	status     int
-	namePrefix string
-}
-
-func (r *installerFailureRunner) LookPath(ctx context.Context, name string) (string, error) {
-	return r.fixture.LookPath(ctx, name)
-}
-
-func (r *installerFailureRunner) Run(ctx context.Context, command string, args ...string) (runner.Result, error) {
-	result, err := r.fixture.Run(ctx, command, args...)
-	if err != nil {
-		return result, err
-	}
-	if command == "env" {
-		for _, arg := range args {
-			if strings.HasPrefix(filepath.Base(arg), r.namePrefix) {
-				return runner.Result{ExitCode: r.status}, r.err
-			}
-		}
-	}
-	return result, nil
 }
 
 func slicesContain(values []string, want string) bool {

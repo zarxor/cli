@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
 	"github.com/zarxor/scripts/internal/detect"
+	"github.com/zarxor/scripts/internal/plan"
 	"github.com/zarxor/scripts/internal/profile"
 	"github.com/zarxor/scripts/internal/runner"
 )
@@ -60,6 +62,139 @@ func TestWindowsDetectsMissingToolAndDoesNotUpdateIt(t *testing.T) {
 	for _, command := range fixture.Commands {
 		if command.Command == "winget" && len(command.Args) > 0 && command.Args[0] == "upgrade" {
 			t.Fatalf("Update() upgraded missing tool: %#v", fixture.Commands)
+		}
+	}
+}
+
+func TestWindowsTreatsMissingDockerComponentAsAbsent(t *testing.T) {
+	fixture := runner.NewFixture()
+	fixture.LookPaths["docker"] = `C:\Program Files\Docker\Docker\resources\bin\docker.exe`
+	fixture.Set(`C:\Program Files\Docker\Docker\resources\bin\docker.exe`, []string{"compose", "version"}, runner.Result{Stderr: "docker: 'compose' is not a docker command\n", ExitCode: 1}, errors.New("exit status 1"))
+	fixture.Set("winget", []string{"show", "--id", "Docker.DockerDesktop", "--exact"}, runner.Result{Stdout: "Version: 4.42.0\n"}, nil)
+	adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture})
+
+	got, err := adapter.Detect(context.Background(), mustTool(t, profile.DockerCompose))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (detect.Detection{Candidate: "4.42.0"}) {
+		t.Fatalf("Detect() = %#v, want absent Compose with Docker Desktop candidate", got)
+	}
+}
+
+func TestWindowsPreservesGenuineDockerDetectionFailure(t *testing.T) {
+	fixture := runner.NewFixture()
+	path := `C:\Program Files\Docker\Docker\resources\bin\docker.exe`
+	fixture.LookPaths["docker"] = path
+	wantErr := errors.New("access denied")
+	fixture.Set(path, []string{"buildx", "version"}, runner.Result{Stderr: "access denied\n", ExitCode: 1}, wantErr)
+	adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture})
+
+	_, err := adapter.Detect(context.Background(), mustTool(t, profile.DockerBuildx))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Detect() error = %v, want genuine failure", err)
+	}
+}
+
+func TestWindowsDetectsCandidatesForInstalledUserTools(t *testing.T) {
+	fixture := runner.NewFixture()
+	paths := map[string]string{
+		"nvm":  `C:\Users\johan\AppData\Roaming\nvm\nvm.exe`,
+		"node": `C:\Program Files\nodejs\node.exe`, "npm": `C:\Program Files\nodejs\npm.cmd`,
+		"corepack": `C:\Program Files\nodejs\corepack.cmd`, "pnpm": `C:\Program Files\nodejs\pnpm.cmd`,
+		"yarn": `C:\Program Files\nodejs\yarn.cmd`, "codex": `C:\Program Files\nodejs\codex.cmd`,
+		"bun": `C:\Program Files\nodejs\bun.exe`,
+	}
+	for executable, path := range paths {
+		fixture.LookPaths[executable] = path
+		fixture.Set(path, windowsSources[mustTool(t, profile.ToolID(executable)).ID].version, runner.Result{Stdout: "1.0.0\n"}, nil)
+	}
+	fixture.Set(paths["nvm"], []string{"list", "available"}, runner.Result{Stdout: "| CURRENT | LTS | OLD STABLE |\n| 26.1.0 | 24.5.0 | 22.1.0 |\n"}, nil)
+	fixture.Set("winget", []string{"show", "--id", "CoreyButler.NVMforWindows", "--exact"}, runner.Result{Stdout: "Version: 1.2.2\n"}, nil)
+	packages := map[profile.ToolID]string{
+		profile.NPM: "npm", profile.Corepack: "corepack", profile.PNPM: "pnpm",
+		profile.Yarn: "@yarnpkg/cli-dist", profile.Codex: "@openai/codex", profile.Bun: "bun",
+	}
+	for id, packageName := range packages {
+		fixture.Set(paths["npm"], []string{"view", packageName, "version"}, runner.Result{Stdout: "2.0.0\n"}, nil)
+		_ = id
+	}
+	adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture})
+	cases := []struct {
+		id   profile.ToolID
+		want string
+	}{
+		{profile.NVM, "1.2.2"}, {profile.Node, "24.5.0"}, {profile.NPM, "2.0.0"}, {profile.Corepack, "2.0.0"},
+		{profile.PNPM, "2.0.0"}, {profile.Yarn, "2.0.0"}, {profile.Codex, "2.0.0"}, {profile.Bun, "2.0.0"},
+	}
+	for _, test := range cases {
+		t.Run(string(test.id), func(t *testing.T) {
+			got, err := adapter.Detect(context.Background(), mustTool(t, test.id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !got.Installed || got.Candidate != test.want {
+				t.Fatalf("Detect() = %#v, want candidate %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestFreshWindowsDevelopmentProfileConvergesProvidersOnceWithoutProcessPATHRefresh(t *testing.T) {
+	programFiles := t.TempDir()
+	nvmHome := filepath.Join(t.TempDir(), "nvm")
+	nvmSymlink := filepath.Join(t.TempDir(), "nodejs")
+	config := WindowsConfig{ProgramFiles: programFiles, NVMHome: nvmHome, NVMSymlink: nvmSymlink}
+	paths := map[string]string{
+		"git":    filepath.Join(programFiles, "Git", "cmd", "git.exe"),
+		"gh":     filepath.Join(programFiles, "GitHub CLI", "gh.exe"),
+		"docker": filepath.Join(programFiles, "Docker", "Docker", "resources", "bin", "docker.exe"),
+		"nvm":    filepath.Join(nvmHome, "nvm.exe"), "node": filepath.Join(nvmSymlink, "node.exe"),
+		"npm": filepath.Join(nvmSymlink, "npm.cmd"), "corepack": filepath.Join(nvmSymlink, "corepack.cmd"),
+		"pnpm": filepath.Join(nvmSymlink, "pnpm.cmd"), "yarn": filepath.Join(nvmSymlink, "yarn.cmd"),
+		"codex": filepath.Join(nvmSymlink, "codex.cmd"), "bun": filepath.Join(nvmSymlink, "bun.cmd"),
+	}
+	fixture := runner.NewFixture()
+	for _, path := range paths {
+		fixture.LookPaths[path] = path
+	}
+	for id, source := range windowsSources {
+		path := paths[source.executable]
+		fixture.Set(path, source.version, runner.Result{Stdout: string(id) + " 1.0.0\n"}, nil)
+	}
+	fixture.Set(paths["nvm"], []string{"list", "available"}, runner.Result{Stdout: "| CURRENT | LTS |\n| 26.1.0 | 24.5.0 |\n"}, nil)
+	elevation := &windowsFixtureElevation{fixture: fixture}
+	adapter := NewWindowsAdapter(fixture, elevation, config)
+	planned, err := plan.MergeProfiles([]profile.Profile{profile.DevelopmentProfile()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordered, err := plan.DependencyOrder(planned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range ordered {
+		if err := adapter.Install(context.Background(), tool); err != nil {
+			t.Fatalf("Install(%s): %v", tool.ID, err)
+		}
+		if err := adapter.Verify(context.Background(), tool); err != nil {
+			t.Fatalf("Verify(%s): %v", tool.ID, err)
+		}
+	}
+
+	dockerInstalls := 0
+	for _, command := range elevation.commands {
+		if command.Command == "winget" && slicesContain(command.Args, "Docker.DockerDesktop") && command.Args[0] == "install" {
+			dockerInstalls++
+		}
+	}
+	if dockerInstalls != 1 {
+		t.Fatalf("Docker Desktop install count = %d, want 1; commands = %#v", dockerInstalls, elevation.commands)
+	}
+	for _, command := range fixture.Commands {
+		switch command.Command {
+		case "git", "gh", "docker", "nvm", "node", "npm", "corepack", "pnpm", "yarn", "codex", "bun":
+			t.Fatalf("fresh profile relied on stale process PATH: %#v", command)
 		}
 	}
 }
@@ -140,6 +275,9 @@ func TestWindowsNodeInstallAndUpdateUseElevatedNVMSequence(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := runner.NewFixture()
+			nvmPath := `C:\Users\johan\AppData\Roaming\nvm\nvm.exe`
+			fixture.LookPaths["nvm"] = nvmPath
+			fixture.Set(nvmPath, []string{"list", "available"}, runner.Result{Stdout: "| CURRENT | LTS |\n| 26.1.0 | 24.5.0 |\n"}, nil)
 			if test.prepare != nil {
 				test.prepare(fixture)
 			}
@@ -149,8 +287,8 @@ func TestWindowsNodeInstallAndUpdateUseElevatedNVMSequence(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := []runner.Command{
-				{Command: "nvm", Args: []string{"install", "lts"}},
-				{Command: "nvm", Args: []string{"use", "lts"}},
+				{Command: nvmPath, Args: []string{"install", "lts"}},
+				{Command: nvmPath, Args: []string{"use", "lts"}},
 			}
 			if !reflect.DeepEqual(elevation.commands, want) {
 				t.Fatalf("elevated commands = %#v, want %#v", elevation.commands, want)
@@ -161,6 +299,8 @@ func TestWindowsNodeInstallAndUpdateUseElevatedNVMSequence(t *testing.T) {
 
 func TestWindowsUsesElevationOnlyForSystemChanges(t *testing.T) {
 	fixture := runner.NewFixture()
+	npmPath := `C:\Program Files\nodejs\npm.cmd`
+	fixture.LookPaths["npm"] = npmPath
 	elevation := &windowsFixtureElevation{fixture: fixture}
 	adapter := NewWindowsAdapter(fixture, elevation)
 
@@ -173,7 +313,8 @@ func TestWindowsUsesElevationOnlyForSystemChanges(t *testing.T) {
 	if len(elevation.commands) != 0 {
 		t.Fatalf("user installers used elevation: %#v", elevation.commands)
 	}
-	assertHasCommand(t, fixture.Commands, "npm", "install", "--global", "@openai/codex")
+	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "@openai/codex@latest")
+	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "bun@latest")
 	for _, command := range fixture.Commands {
 		if command.Command == "bash" || command.Command == "sh" || command.Command == "nvm" {
 			t.Fatalf("Windows adapter invoked a Linux command: %#v", command)
@@ -184,7 +325,9 @@ func TestWindowsUsesElevationOnlyForSystemChanges(t *testing.T) {
 func TestWindowsInstallerFailurePreservesExitStatus(t *testing.T) {
 	fixture := runner.NewFixture()
 	wantErr := &windowsExitError{status: 23}
-	fixture.Set("npm", []string{"install", "--global", "@openai/codex"}, runner.Result{ExitCode: 23}, wantErr)
+	npmPath := `C:\Program Files\nodejs\npm.cmd`
+	fixture.LookPaths["npm"] = npmPath
+	fixture.Set(npmPath, []string{"install", "--global", "@openai/codex@latest"}, runner.Result{ExitCode: 23}, wantErr)
 	adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture})
 
 	err := adapter.Install(context.Background(), mustTool(t, profile.Codex))

@@ -10,7 +10,12 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $GoExe) {
-    $GoExe = Join-Path $repoRoot '.tools/go1.26.5/go/bin/go.exe'
+    $goCommand = Get-Command go -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($goCommand) {
+        $GoExe = $goCommand.Source
+    } else {
+        $GoExe = Join-Path $repoRoot '.tools/go1.26.5/go/bin/go.exe'
+    }
 }
 if (-not (Test-Path -LiteralPath $GoExe -PathType Leaf)) {
     throw "Verified Go executable not found: $GoExe"
