@@ -79,3 +79,53 @@ func addDependencies(id profile.ToolID, selected map[profile.ToolID]struct{}) er
 	}
 	return nil
 }
+
+// DependencyOrder returns each selected tool once with selected dependencies
+// before their dependents. Dependencies absent from the selection are left
+// alone, which preserves an explicit interactive deselection.
+func DependencyOrder(selected []tools.Tool) ([]tools.Tool, error) {
+	unique := make([]tools.Tool, 0, len(selected))
+	byID := make(map[tools.ToolID]tools.Tool, len(selected))
+	for _, tool := range selected {
+		if _, exists := byID[tool.ID]; exists {
+			continue
+		}
+		byID[tool.ID] = tool
+		unique = append(unique, tool)
+	}
+
+	const (
+		unvisited = iota
+		visiting
+		visited
+	)
+	state := make(map[tools.ToolID]int, len(unique))
+	ordered := make([]tools.Tool, 0, len(unique))
+	var visit func(tools.Tool) error
+	visit = func(tool tools.Tool) error {
+		switch state[tool.ID] {
+		case visiting:
+			return fmt.Errorf("dependency cycle includes tool %q", tool.ID)
+		case visited:
+			return nil
+		}
+		state[tool.ID] = visiting
+		for _, dependencyID := range tool.Dependencies {
+			if dependency, selected := byID[dependencyID]; selected {
+				if err := visit(dependency); err != nil {
+					return err
+				}
+			}
+		}
+		state[tool.ID] = visited
+		ordered = append(ordered, tool)
+		return nil
+	}
+
+	for _, tool := range unique {
+		if err := visit(tool); err != nil {
+			return nil, err
+		}
+	}
+	return ordered, nil
+}

@@ -1,0 +1,310 @@
+// Package install selects and executes tool installation and update plans.
+package install
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/zarxor/scripts/internal/adapters"
+	"github.com/zarxor/scripts/internal/plan"
+	"github.com/zarxor/scripts/internal/platform"
+	"github.com/zarxor/scripts/internal/render"
+	"github.com/zarxor/scripts/internal/tools"
+)
+
+type SelectionUI = render.SelectionUI
+type Item = render.Item
+
+type Action string
+
+const (
+	Install Action = "install"
+	Update  Action = "update"
+)
+
+type ToolStatus struct {
+	Tool             tools.Tool
+	Installed        bool
+	Selected         bool
+	CurrentVersion   string
+	CandidateVersion string
+}
+
+type Options struct {
+	Yes       bool
+	DryRun    bool
+	Writer    io.Writer
+	Selection SelectionUI
+}
+
+type ToolResult struct {
+	Tool   tools.Tool
+	Action Action
+	Status string
+	Err    error
+}
+
+type Summary struct {
+	Results []ToolResult
+	Failed  bool
+}
+
+func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet map[platform.OS]adapters.Adapter, opts Options) Summary {
+	writer := opts.Writer
+	if writer == nil {
+		writer = io.Discard
+	}
+	if action != Install && action != Update {
+		return failedPlan(statuses, action, fmt.Errorf("unsupported action %q", action))
+	}
+
+	eligible := eligibleStatuses(action, statuses)
+	if len(eligible) == 0 {
+		_ = renderStatuses(writer, eligible)
+		return Summary{}
+	}
+	items := selectionItems(action, eligible)
+	selectedIDs := itemIDs(items)
+	if !opts.Yes && !opts.DryRun && opts.Selection == nil {
+		return failedPlan(eligible, action, fmt.Errorf("interactive selection is required unless --yes is supplied"))
+	}
+	if !opts.Yes && opts.Selection != nil {
+		var err error
+		selectedIDs, err = opts.Selection.Select(ctx, items)
+		if err != nil {
+			_, _ = fmt.Fprintf(writer, "selection failed: %v\n", err)
+			return Summary{Failed: true}
+		}
+	} else {
+		_ = renderStatuses(writer, eligible)
+	}
+
+	selected := selectStatuses(eligible, selectedIDs)
+	orderedTools, err := plan.DependencyOrder(statusTools(selected))
+	if err != nil {
+		return failedPlan(selected, action, err)
+	}
+	selectedByID := make(map[tools.ToolID]ToolStatus, len(selected))
+	for _, status := range selected {
+		selectedByID[status.Tool.ID] = status
+	}
+
+	summary := Summary{Results: make([]ToolResult, 0, len(orderedTools))}
+	if len(orderedTools) == 0 {
+		return summary
+	}
+	if opts.DryRun {
+		for _, tool := range orderedTools {
+			resultAction := actionFor(action, selectedByID[tool.ID])
+			summary.Results = append(summary.Results, ToolResult{Tool: tool, Action: resultAction, Status: "dry-run"})
+			_, _ = fmt.Fprintf(writer, "%s %s: dry-run\n", resultAction, tool.Name)
+		}
+		return summary
+	}
+
+	adapter, err := hostAdapter(adapterSet)
+	if err != nil {
+		return failedPlan(selected, action, err)
+	}
+	resultsByID := make(map[tools.ToolID]ToolResult, len(orderedTools))
+	selectedSet := make(map[tools.ToolID]struct{}, len(orderedTools))
+	for _, tool := range orderedTools {
+		selectedSet[tool.ID] = struct{}{}
+	}
+
+	for _, tool := range orderedTools {
+		status := selectedByID[tool.ID]
+		resultAction := actionFor(action, status)
+		if dependency, blocked := failedDependency(tool, selectedSet, resultsByID); blocked {
+			result := ToolResult{
+				Tool:   tool,
+				Action: resultAction,
+				Status: "skipped",
+				Err:    fmt.Errorf("dependency %q did not complete successfully", dependency),
+			}
+			summary.Results = append(summary.Results, result)
+			resultsByID[tool.ID] = result
+			summary.Failed = true
+			continue
+		}
+		if status.Installed && versionsMatch(status) {
+			result := ToolResult{Tool: tool, Action: resultAction, Status: "up-to-date"}
+			summary.Results = append(summary.Results, result)
+			resultsByID[tool.ID] = result
+			continue
+		}
+
+		err := execute(ctx, adapter, resultAction, tool)
+		resultStatus := pastTense(resultAction)
+		if err == nil {
+			err = adapter.Verify(ctx, tool)
+		}
+		result := ToolResult{Tool: tool, Action: resultAction, Status: resultStatus, Err: err}
+		if err != nil {
+			result.Status = "failed"
+			summary.Failed = true
+		}
+		summary.Results = append(summary.Results, result)
+		resultsByID[tool.ID] = result
+	}
+	return summary
+}
+
+func eligibleStatuses(action Action, statuses []ToolStatus) []ToolStatus {
+	byID := make(map[tools.ToolID]int, len(statuses))
+	eligible := make([]ToolStatus, 0, len(statuses))
+	for _, status := range statuses {
+		if action == Update && !status.Installed {
+			continue
+		}
+		if index, exists := byID[status.Tool.ID]; exists {
+			mergeStatus(&eligible[index], status)
+			continue
+		}
+		byID[status.Tool.ID] = len(eligible)
+		eligible = append(eligible, status)
+	}
+	return eligible
+}
+
+func mergeStatus(target *ToolStatus, duplicate ToolStatus) {
+	target.Installed = target.Installed || duplicate.Installed
+	target.Selected = target.Selected || duplicate.Selected
+	if target.CurrentVersion == "" {
+		target.CurrentVersion = duplicate.CurrentVersion
+	}
+	if target.CandidateVersion == "" {
+		target.CandidateVersion = duplicate.CandidateVersion
+	}
+}
+
+func selectionItems(action Action, statuses []ToolStatus) []Item {
+	items := make([]Item, 0, len(statuses))
+	for _, status := range statuses {
+		label := status.Tool.Name
+		if action == Update {
+			label = fmt.Sprintf("%s (%s -> %s)", status.Tool.Name, versionLabel(status.CurrentVersion), versionLabel(status.CandidateVersion))
+		}
+		items = append(items, Item{Tool: status.Tool, Label: label, Selected: true})
+	}
+	return items
+}
+
+func renderStatuses(writer io.Writer, statuses []ToolStatus) error {
+	rows := make([]render.VersionRow, 0, len(statuses))
+	for _, status := range statuses {
+		rows = append(rows, render.VersionRow{
+			Tool:             status.Tool,
+			CurrentVersion:   status.CurrentVersion,
+			CandidateVersion: status.CandidateVersion,
+		})
+	}
+	return render.VersionTable(writer, rows)
+}
+
+func itemIDs(items []Item) []tools.ToolID {
+	ids := make([]tools.ToolID, 0, len(items))
+	for _, item := range items {
+		if item.Selected {
+			ids = append(ids, item.Tool.ID)
+		}
+	}
+	return ids
+}
+
+func selectStatuses(statuses []ToolStatus, ids []tools.ToolID) []ToolStatus {
+	selected := make(map[tools.ToolID]struct{}, len(ids))
+	for _, id := range ids {
+		selected[id] = struct{}{}
+	}
+	result := make([]ToolStatus, 0, len(selected))
+	for _, status := range statuses {
+		if _, ok := selected[status.Tool.ID]; ok {
+			result = append(result, status)
+		}
+	}
+	return result
+}
+
+func statusTools(statuses []ToolStatus) []tools.Tool {
+	result := make([]tools.Tool, len(statuses))
+	for i, status := range statuses {
+		result[i] = status.Tool
+	}
+	return result
+}
+
+func actionFor(requested Action, status ToolStatus) Action {
+	if requested == Install && status.Installed {
+		return Update
+	}
+	return requested
+}
+
+func versionsMatch(status ToolStatus) bool {
+	return status.CurrentVersion != "" && status.CandidateVersion != "" && status.CurrentVersion == status.CandidateVersion
+}
+
+func execute(ctx context.Context, adapter adapters.Adapter, action Action, tool tools.Tool) error {
+	if action == Install {
+		return adapter.Install(ctx, tool)
+	}
+	return adapter.Update(ctx, tool)
+}
+
+func failedDependency(tool tools.Tool, selected map[tools.ToolID]struct{}, results map[tools.ToolID]ToolResult) (tools.ToolID, bool) {
+	for _, dependency := range tool.Dependencies {
+		if _, isSelected := selected[dependency]; !isSelected {
+			continue
+		}
+		result := results[dependency]
+		if result.Err != nil || result.Status == "skipped" {
+			return dependency, true
+		}
+	}
+	return "", false
+}
+
+func hostAdapter(adapterSet map[platform.OS]adapters.Adapter) (adapters.Adapter, error) {
+	if len(adapterSet) == 1 {
+		for _, adapter := range adapterSet {
+			if adapter != nil {
+				return adapter, nil
+			}
+		}
+	}
+	host, err := platform.Detect()
+	if err == nil {
+		if adapter := adapterSet[host]; adapter != nil {
+			return adapter, nil
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("detect platform: %w", err)
+	}
+	return nil, fmt.Errorf("no adapter configured for platform %q", host)
+}
+
+func failedPlan(statuses []ToolStatus, action Action, err error) Summary {
+	summary := Summary{Failed: true, Results: make([]ToolResult, 0, len(statuses))}
+	for _, status := range statuses {
+		summary.Results = append(summary.Results, ToolResult{Tool: status.Tool, Action: action, Status: "failed", Err: err})
+	}
+	return summary
+}
+
+func pastTense(action Action) string {
+	if action == Install {
+		return "installed"
+	}
+	return "updated"
+}
+
+func versionLabel(version string) string {
+	if strings.TrimSpace(version) == "" {
+		return "-"
+	}
+	return version
+}

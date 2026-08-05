@@ -70,6 +70,35 @@ func TestMergeProfilesRejectsEmptySelection(t *testing.T) {
 	}
 }
 
+func TestDependencyOrderPlacesDependenciesBeforeDependents(t *testing.T) {
+	selected := []profile.Tool{
+		{ID: "dependent", Name: "Dependent", Dependencies: []profile.ToolID{"base"}},
+		{ID: "independent", Name: "Independent"},
+		{ID: "base", Name: "Base"},
+		{ID: "base", Name: "Duplicate Base"},
+	}
+
+	got, err := plan.DependencyOrder(selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []profile.ToolID{"base", "dependent", "independent"}
+	if gotIDs := toolIDs(got); !reflect.DeepEqual(gotIDs, want) {
+		t.Fatalf("DependencyOrder() IDs = %v, want %v", gotIDs, want)
+	}
+}
+
+func TestDependencyOrderRejectsCycles(t *testing.T) {
+	selected := []profile.Tool{
+		{ID: "first", Dependencies: []profile.ToolID{"second"}},
+		{ID: "second", Dependencies: []profile.ToolID{"first"}},
+	}
+
+	if _, err := plan.DependencyOrder(selected); err == nil {
+		t.Fatal("DependencyOrder() error = nil, want cycle error")
+	}
+}
+
 func toolIDs(got []profile.Tool) []profile.ToolID {
 	ids := make([]profile.ToolID, len(got))
 	for i, tool := range got {
