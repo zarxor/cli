@@ -38,6 +38,7 @@ type Options struct {
 	Yes       bool
 	DryRun    bool
 	Writer    io.Writer
+	Renderer  *render.Renderer
 	Selection SelectionUI
 }
 
@@ -59,13 +60,17 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 	if writer == nil {
 		writer = io.Discard
 	}
+	renderer := opts.Renderer
+	if renderer == nil {
+		renderer = render.NewPlainRenderer(writer)
+	}
 	if action != Install && action != Update {
 		return failedPlan(statuses, action, fmt.Errorf("unsupported action %q", action))
 	}
 
 	eligible := eligibleStatuses(action, statuses)
 	if len(eligible) == 0 {
-		if err := renderStatuses(writer, eligible); err != nil {
+		if err := renderStatuses(renderer, eligible); err != nil {
 			return failedPlan(statuses, action, fmt.Errorf("render plan: %w", err))
 		}
 		return Summary{}
@@ -79,14 +84,16 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 		var err error
 		selectedIDs, err = opts.Selection.Select(ctx, items)
 		if errors.Is(err, render.ErrCancelled) {
+			if renderErr := renderer.Cancelled(); renderErr != nil {
+				return failedPlan(eligible, action, fmt.Errorf("render cancellation: %w", renderErr))
+			}
 			return Summary{Cancelled: true}
 		}
 		if err != nil {
-			_, _ = fmt.Fprintf(writer, "selection failed: %v\n", err)
 			return failedPlan(eligible, action, fmt.Errorf("select tools: %w", err))
 		}
 	} else {
-		if err := renderStatuses(writer, eligible); err != nil {
+		if err := renderStatuses(renderer, eligible); err != nil {
 			return failedPlan(eligible, action, fmt.Errorf("render plan: %w", err))
 		}
 	}
@@ -108,9 +115,13 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 	if opts.DryRun {
 		for _, tool := range orderedTools {
 			resultAction := actionFor(action, selectedByID[tool.ID])
-			summary.Results = append(summary.Results, ToolResult{Tool: tool, Action: resultAction, Status: "dry-run"})
-			if _, err := fmt.Fprintf(writer, "%s %s: dry-run\n", resultAction, tool.Name); err != nil {
-				return failedPlan(selected, action, fmt.Errorf("render dry-run result: %w", err))
+			result := ToolResult{Tool: tool, Action: resultAction, Status: "dry-run"}
+			summary.Results = append(summary.Results, result)
+			if err := renderResult(renderer, result); err != nil {
+				summary.Failed = true
+				summary.Results[len(summary.Results)-1].Status = "failed"
+				summary.Results[len(summary.Results)-1].Err = fmt.Errorf("render dry-run result: %w", err)
+				return summary
 			}
 		}
 		return summary
@@ -139,12 +150,23 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 			summary.Results = append(summary.Results, result)
 			resultsByID[tool.ID] = result
 			summary.Failed = true
+			if err := renderResult(renderer, result); err != nil {
+				summary.Results[len(summary.Results)-1].Status = "failed"
+				summary.Results[len(summary.Results)-1].Err = fmt.Errorf("render skipped result: %w", err)
+				return summary
+			}
 			continue
 		}
 		if status.Installed && versionsMatch(status) {
 			result := ToolResult{Tool: tool, Action: resultAction, Status: "up-to-date"}
 			summary.Results = append(summary.Results, result)
 			resultsByID[tool.ID] = result
+			if err := renderResult(renderer, result); err != nil {
+				summary.Failed = true
+				summary.Results[len(summary.Results)-1].Status = "failed"
+				summary.Results[len(summary.Results)-1].Err = fmt.Errorf("render up-to-date result: %w", err)
+				return summary
+			}
 			continue
 		}
 
@@ -160,6 +182,12 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 		}
 		summary.Results = append(summary.Results, result)
 		resultsByID[tool.ID] = result
+		if renderErr := renderResult(renderer, result); renderErr != nil {
+			summary.Failed = true
+			summary.Results[len(summary.Results)-1].Status = "failed"
+			summary.Results[len(summary.Results)-1].Err = fmt.Errorf("render result: %w", renderErr)
+			return summary
+		}
 	}
 	return summary
 }
@@ -204,7 +232,7 @@ func selectionItems(action Action, statuses []ToolStatus) []Item {
 	return items
 }
 
-func renderStatuses(writer io.Writer, statuses []ToolStatus) error {
+func renderStatuses(renderer *render.Renderer, statuses []ToolStatus) error {
 	rows := make([]render.VersionRow, 0, len(statuses))
 	for _, status := range statuses {
 		rows = append(rows, render.VersionRow{
@@ -213,7 +241,16 @@ func renderStatuses(writer io.Writer, statuses []ToolStatus) error {
 			CandidateVersion: status.CandidateVersion,
 		})
 	}
-	return render.VersionTable(writer, rows)
+	return renderer.VersionTable(rows)
+}
+
+func renderResult(renderer *render.Renderer, result ToolResult) error {
+	return renderer.Result(render.ResultRow{
+		Action: string(result.Action),
+		Tool:   result.Tool.Name,
+		Status: result.Status,
+		Err:    result.Err,
+	})
 }
 
 func itemIDs(items []Item) []tools.ToolID {

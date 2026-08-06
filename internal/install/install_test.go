@@ -60,14 +60,50 @@ func TestInstallAllowsAllToolsToBeDeselected(t *testing.T) {
 func TestRunTreatsSelectionCancellationAsSuccessfulNoOp(t *testing.T) {
 	adapter := &fixtureAdapter{}
 	selection := &fixtureSelection{err: render.ErrCancelled}
+	var output bytes.Buffer
 
 	summary := install.Run(context.Background(), install.Install, []install.ToolStatus{{Tool: mustTool(t, profile.Git), Selected: true}}, fixtureAdapters(adapter), install.Options{
-		Writer:    &bytes.Buffer{},
+		Writer:    &output,
 		Selection: selection,
 	})
 
 	if summary.Failed || !summary.Cancelled || len(adapter.calls) != 0 {
 		t.Fatalf("Run() = %#v, adapter calls = %v; want successful cancellation", summary, adapter.calls)
+	}
+	if got, want := output.String(), "Cancelled — no changes made\n"; got != want {
+		t.Fatalf("cancellation output = %q, want %q", got, want)
+	}
+}
+
+func TestRunRendersEverySuccessfulResult(t *testing.T) {
+	adapter := &fixtureAdapter{}
+	var output bytes.Buffer
+	statuses := []install.ToolStatus{
+		{Tool: mustTool(t, profile.Git)},
+		{Tool: mustTool(t, profile.Bun), Installed: true, CurrentVersion: "1.2.0", CandidateVersion: "1.2.0"},
+	}
+	summary := install.Run(context.Background(), install.Install, statuses, fixtureAdapters(adapter), install.Options{Yes: true, Writer: &output})
+	if summary.Failed {
+		t.Fatalf("Run() = %#v", summary)
+	}
+	for _, want := range []string{"✓ installed Git", "✓ up-to-date Bun"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("output %q does not contain %q", output.String(), want)
+		}
+	}
+}
+
+func TestRunStopsAfterPostMutationResultRenderingFailure(t *testing.T) {
+	wantErr := errors.New("writer failed")
+	writer := &failingWriter{failAt: 1, err: wantErr}
+	adapter := &fixtureAdapter{}
+	statuses := []install.ToolStatus{{Tool: mustTool(t, profile.Git)}, {Tool: mustTool(t, profile.Bun)}}
+	summary := install.Run(context.Background(), install.Install, statuses, fixtureAdapters(adapter), install.Options{Yes: true, Writer: writer})
+	if !summary.Failed || !reflect.DeepEqual(adapter.calls, []string{"install:git", "verify:git"}) {
+		t.Fatalf("Run() = %#v, calls = %v; want stop after first rendered result fails", summary, adapter.calls)
+	}
+	if len(summary.Results) != 1 || !errors.Is(summary.Results[0].Err, wantErr) {
+		t.Fatalf("results = %#v, want rendering failure", summary.Results)
 	}
 }
 

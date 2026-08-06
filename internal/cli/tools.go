@@ -29,6 +29,7 @@ type ToolsRequest struct {
 	Yes          bool
 	DryRun       bool
 	Writer       io.Writer
+	Renderer     *render.Renderer
 	Selection    install.SelectionUI
 }
 
@@ -80,6 +81,7 @@ func newToolsActionCommand(service ToolsService, action install.Action) *cobra.C
 			input := command.InOrStdin()
 			writer := command.OutOrStdout()
 			theme := render.AutoTheme(input, writer, os.Environ())
+			renderer := render.NewRenderer(writer, theme)
 			return service.Run(command.Context(), ToolsRequest{
 				Action:       action,
 				ProfileNames: profileNames,
@@ -87,6 +89,7 @@ func newToolsActionCommand(service ToolsService, action install.Action) *cobra.C
 				Yes:          yes,
 				DryRun:       dryRun,
 				Writer:       writer,
+				Renderer:     renderer,
 				Selection:    render.NewAdaptiveSelection(input, writer, theme),
 			})
 		},
@@ -162,6 +165,7 @@ func (s *toolsService) Run(ctx context.Context, request ToolsRequest) error {
 		Yes:       request.Yes,
 		DryRun:    request.DryRun,
 		Writer:    request.Writer,
+		Renderer:  request.Renderer,
 		Selection: request.Selection,
 	})
 	if !summary.Failed {

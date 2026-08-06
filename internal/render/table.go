@@ -1,8 +1,10 @@
 package render
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/zarxor/scripts/internal/tools"
@@ -17,7 +19,12 @@ type VersionRow struct {
 // VersionTable renders tool versions consistently for interactive and dry-run
 // plans. A dash means the adapter could not provide that version.
 func VersionTable(writer io.Writer, rows []VersionRow) error {
-	table := tabwriter.NewWriter(writer, 0, 4, 2, ' ', 0)
+	return NewPlainRenderer(writer).VersionTable(rows)
+}
+
+func (r *Renderer) VersionTable(rows []VersionRow) error {
+	var output bytes.Buffer
+	table := tabwriter.NewWriter(&output, 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(table, "TOOL\tCURRENT\tCANDIDATE"); err != nil {
 		return err
 	}
@@ -28,7 +35,15 @@ func VersionTable(writer io.Writer, rows []VersionRow) error {
 			return err
 		}
 	}
-	return table.Flush()
+	if err := table.Flush(); err != nil {
+		return err
+	}
+	value := output.String()
+	value = strings.Replace(value, "TOOL", r.theme.Accent("TOOL"), 1)
+	value = strings.Replace(value, "CURRENT", r.theme.Accent("CURRENT"), 1)
+	value = strings.Replace(value, "CANDIDATE", r.theme.Accent("CANDIDATE"), 1)
+	_, err := io.WriteString(r.writer, value)
+	return err
 }
 
 func versionOrDash(version string) string {

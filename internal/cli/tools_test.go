@@ -34,6 +34,7 @@ func TestToolsInstallParsesFlagsForService(t *testing.T) {
 	}
 	got := service.requests[0]
 	got.Writer = nil
+	got.Renderer = nil
 	got.Selection = nil
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("service request = %#v, want %#v", got, want)

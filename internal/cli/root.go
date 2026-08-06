@@ -2,11 +2,16 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/zarxor/scripts/internal/render"
 )
+
+type themeFactory func(*cobra.Command) render.Theme
 
 // Execute runs the CLI with its standard input and output streams.
 func Execute(ctx context.Context, args []string) error {
@@ -27,13 +32,38 @@ func newRootCommand(services ...ToolsService) *cobra.Command {
 	if len(services) > 0 {
 		service = services[0]
 	}
+	return newRootCommandWithTheme(service, func(cmd *cobra.Command) render.Theme {
+		return render.AutoTheme(cmd.InOrStdin(), cmd.OutOrStdout(), os.Environ())
+	})
+}
+
+func newRootCommandWithTheme(service ToolsService, themeFor themeFactory) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "jb",
 		Short: "Johan Bostrom CLI",
 	}
 	root.AddCommand(
 		newToolsCommand(service),
-		newVersionCommand(),
+		newVersionCommand(themeFor),
 	)
+	defaultHelp := root.HelpFunc()
+	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		var plain bytes.Buffer
+		output := cmd.OutOrStdout()
+		cmd.SetOut(&plain)
+		defaultHelp(cmd, args)
+		cmd.SetOut(output)
+		_ = render.NewRenderer(output, themeFor(cmd)).Help(plain.String())
+	})
 	return root
+}
+
+// PrintError writes a consistent command failure to the supplied stream.
+func PrintError(writer io.Writer, err error) error {
+	theme := render.AutoTheme(os.Stdin, writer, os.Environ())
+	return printErrorWithTheme(writer, err, theme)
+}
+
+func printErrorWithTheme(writer io.Writer, err error, theme render.Theme) error {
+	return render.NewRenderer(writer, theme).Error(err)
 }
