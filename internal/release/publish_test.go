@@ -136,6 +136,23 @@ func TestPublishRejectsIncorrectDraftAssetsBeforePublishing(t *testing.T) {
 	}
 }
 
+func TestPublishQuotesMissingAssetRecoveryPaths(t *testing.T) {
+	artifactDir := filepath.Join(t.TempDir(), "artifacts with spaces")
+	if err := os.MkdirAll(artifactDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeExpectedArtifacts(t, artifactDir)
+	runner, request := successfulPublishRunner(t, artifactDir)
+	request.env.hostOS = "windows"
+	viewKey := commandKey(request.env.gh, "release", "view", request.version.String(), "--json", "isDraft,url,assets")
+	runner.queues[viewKey] = []fakeResponse{{output: releaseJSON(true, expectedAssets[1:])}}
+	_, err := publish(context.Background(), runner, request)
+	quotedPath := "'" + filepath.Join(artifactDir, expectedAssets[0]) + "'"
+	if err == nil || !strings.Contains(err.Error(), "gh release upload v1.0.0 "+quotedPath) {
+		t.Fatalf("publish() recovery = %v, want safely quoted path %s", err, quotedPath)
+	}
+}
+
 func TestPublishReportsRecoveryForRemoteFailures(t *testing.T) {
 	tests := []struct {
 		name       string

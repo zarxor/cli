@@ -13,6 +13,7 @@ type environment struct {
 	goExe        string
 	gh           string
 	shell        string
+	hostOS       string
 	tags         []string
 	existingTags map[string]struct{}
 }
@@ -105,6 +106,7 @@ func preflight(ctx context.Context, runner Runner, launchDir, hostOS string) (en
 		goExe:        goExe,
 		gh:           gh,
 		shell:        shell,
+		hostOS:       hostOS,
 		tags:         tags,
 		existingTags: existingTags,
 	}, nil

@@ -107,7 +107,7 @@ func publish(ctx context.Context, runner Runner, request publication) (string, e
 		if missing := missingReleaseAssets(draft, assets); len(missing) > 0 {
 			paths := make([]string, 0, len(missing))
 			for _, name := range missing {
-				paths = append(paths, filepath.Join(request.artifactDir, name))
+				paths = append(paths, quoteShellArgument(filepath.Join(request.artifactDir, name), request.env.hostOS))
 			}
 			recovery = "gh release upload " + version + " " + strings.Join(paths, " ")
 		}
@@ -134,6 +134,13 @@ func publish(ctx context.Context, runner Runner, request publication) (string, e
 	}
 	complete("published release verified", "Verified published release")
 	return published.URL, nil
+}
+
+func quoteShellArgument(value, hostOS string) string {
+	if hostOS == "windows" {
+		return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func publicationFailure(request publication, cause error, recovery string, completed []string) error {
