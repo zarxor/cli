@@ -17,6 +17,7 @@ type fakeResponse struct {
 type fakeRunner struct {
 	paths     map[string]string
 	responses map[string]fakeResponse
+	queues    map[string][]fakeResponse
 	calls     []string
 }
 
@@ -31,6 +32,11 @@ func (r *fakeRunner) LookPath(file string) (string, error) {
 func (r *fakeRunner) Run(_ context.Context, dir, name string, args ...string) (string, error) {
 	key := commandKey(name, args...)
 	r.calls = append(r.calls, dir+"\x00"+key)
+	if queue := r.queues[key]; len(queue) > 0 {
+		response := queue[0]
+		r.queues[key] = queue[1:]
+		return response.output, response.err
+	}
 	response, found := r.responses[key]
 	if !found {
 		return "", fmt.Errorf("unexpected command: %s", key)
