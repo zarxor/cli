@@ -62,9 +62,22 @@ Install from the complete supported tool catalog with:
 jb tools install
 ```
 
-Every eligible tool is preselected in the interactive list. Deselect anything
-you do not want, or press Enter to accept the full plan. For automation, skip
-the selection and confirmation prompts with:
+Every eligible tool is preselected in the interactive list:
+
+```text
+❯ [✓] Git
+  [✓] GitHub CLI
+  [✗] Docker
+```
+
+Use ↑/↓ to move, Space to toggle `[✓]` selected and `[✗]` deselected tools,
+and Enter to accept the plan. Escape or Ctrl+C cancels without making changes.
+When input or output is redirected, `jb` uses a plain numbered selection
+instead. Colors are enabled only in a terminal and can be disabled by setting
+the `NO_COLOR` environment variable; the symbols keep every state readable
+without color.
+
+For automation, skip the selection and confirmation prompts with:
 
 ```text
 jb tools install --yes
