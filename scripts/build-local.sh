@@ -6,6 +6,24 @@ version=dev
 output_dir="${TMPDIR:-/tmp}/jb-release"
 go_exe=${JB_GO_EXE:-}
 
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256_file() { sha256sum "$1"; }
+elif command -v shasum >/dev/null 2>&1; then
+  sha256_file() { shasum -a 256 "$1"; }
+else
+  printf 'SHA-256 command not found; install sha256sum or shasum.\n' >&2
+  exit 1
+fi
+
+if command -v gtar >/dev/null 2>&1; then
+  tar_exe=$(command -v gtar)
+elif command -v tar >/dev/null 2>&1 && [[ $(tar --version 2>&1) == *"GNU tar"* ]]; then
+  tar_exe=$(command -v tar)
+else
+  printf 'GNU tar is required for deterministic archives. On macOS, run: brew install gnu-tar\n' >&2
+  exit 1
+fi
+
 usage() {
   printf 'Usage: %s [--version VERSION] [--output-dir DIRECTORY] [--go GO_EXECUTABLE]\n' "$0"
 }
@@ -52,7 +70,7 @@ build_target() {
   if [[ $os == linux ]]; then
     (
       cd "$staging_root"
-      tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - "$executable" | gzip -n >"$asset_path"
+      "$tar_exe" --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - "$executable" | gzip -n >"$asset_path"
     )
   else
     (
@@ -61,7 +79,7 @@ build_target() {
       zip -X -q "$asset_path" "$executable"
     )
   fi
-  (cd "$output_dir" && sha256sum "$asset" >"$asset.sha256")
+  (cd "$output_dir" && sha256_file "$asset" >"$asset.sha256")
   printf 'built %s\n' "$asset_path"
 }
 

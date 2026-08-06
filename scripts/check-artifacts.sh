@@ -4,6 +4,15 @@ set -euo pipefail
 version=dev
 artifact_dir="${TMPDIR:-/tmp}/jb-release"
 
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256_file() { sha256sum "$1"; }
+elif command -v shasum >/dev/null 2>&1; then
+  sha256_file() { shasum -a 256 "$1"; }
+else
+  printf 'SHA-256 command not found; install sha256sum or shasum.\n' >&2
+  exit 1
+fi
+
 usage() {
   printf 'Usage: %s [--version VERSION] [--artifact-dir DIRECTORY]\n' "$0"
 }
@@ -17,8 +26,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-host_os=linux
-[[ $(uname -s) == MINGW* || $(uname -s) == MSYS* || $(uname -s) == CYGWIN* ]] && host_os=windows
+case $(uname -s) in
+  Linux) host_os=linux ;;
+  MINGW*|MSYS*|CYGWIN*) host_os=windows ;;
+  *) host_os=unsupported ;;
+esac
 case $(uname -m) in
   x86_64|amd64) host_arch=amd64 ;;
   aarch64|arm64) host_arch=arm64 ;;
@@ -34,7 +46,7 @@ check_target() {
   line_count=$(awk 'END { print NR }' "$checksum")
   [[ $line_count -eq 1 ]] || { printf 'Invalid checksum record count in %s\n' "$checksum" >&2; return 1; }
   checksum_record=$(<"$checksum")
-  computed_hash=$(sha256sum "$asset_path" | awk '{print $1}')
+  computed_hash=$(sha256_file "$asset_path" | awk '{print $1}')
   expected_record="$computed_hash  $asset"
   [[ $checksum_record == "$expected_record" ]] || { printf 'Checksum does not match expected asset: %s\n' "$checksum" >&2; return 1; }
   if [[ $os == linux ]]; then
