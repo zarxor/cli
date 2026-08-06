@@ -35,10 +35,11 @@ shell_eol=$($git_bin check-attr eol -- install.sh | awk '{print $3}')
 assert_eq lf "$shell_eol" "Git preserves LF line endings for the Linux bootstrap installer"
 
 readme=$(<README.md)
+readme=${readme//$'\r'/}
 assert_contains "$readme" "# Johan Bostrom CLI" "README uses the product name"
 assert_contains "$readme" "https://cli.johanbostrom.se/install.sh" "README documents the Linux bootstrap URL"
 assert_contains "$readme" "https://cli.johanbostrom.se/install.ps1" "README documents the Windows bootstrap URL"
-assert_contains "$readme" "jb tools install" "README documents full catalog installation"
+assert_contains "$readme" $'```text\njb tools install\n```' "README documents full catalog installation"
 assert_contains "$readme" "jb tools install --yes" "README documents non-interactive full catalog installation"
 assert_contains "$readme" "preselected" "README explains the default interactive selection"
 assert_contains "$readme" "jb tools install --profiles=development" "README documents development profile installation"

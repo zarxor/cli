@@ -157,6 +157,30 @@ func TestToolsInstallWithoutScopePreselectsFullCatalog(t *testing.T) {
 	}
 }
 
+func TestToolsInstallWithoutScopeYesSkipsSelectionAndInstallsFullCatalog(t *testing.T) {
+	adapter := newFixtureAdapter()
+	selection := &recordingSelection{err: errors.New("selection should not run")}
+	err := fixtureService(adapter).Run(context.Background(), ToolsRequest{
+		Action:    install.Install,
+		Yes:       true,
+		Writer:    io.Discard,
+		Selection: selection,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.calls != 0 {
+		t.Fatalf("selection calls = %d, want zero", selection.calls)
+	}
+	want := make([]string, 0, 2*len(tools.Catalog))
+	for _, tool := range tools.Catalog {
+		want = append(want, "install:"+string(tool.ID), "verify:"+string(tool.ID))
+	}
+	if !reflect.DeepEqual(adapter.calls, want) {
+		t.Fatalf("adapter calls = %v, want full catalog install and verification %v", adapter.calls, want)
+	}
+}
+
 func TestToolsRejectsEmptyProfileNameBeforeService(t *testing.T) {
 	service := &recordingToolsService{}
 	err := executeRoot(t, service, "tools", "install", "--profiles=development, ", "--yes")
@@ -242,11 +266,14 @@ type recordingToolsService struct {
 
 type recordingSelection struct {
 	items []install.Item
+	err   error
+	calls int
 }
 
 func (s *recordingSelection) Select(_ context.Context, items []install.Item) ([]tools.ToolID, error) {
+	s.calls++
 	s.items = append([]install.Item(nil), items...)
-	return nil, nil
+	return nil, s.err
 }
 
 func (s *recordingToolsService) Run(_ context.Context, request ToolsRequest) error {
