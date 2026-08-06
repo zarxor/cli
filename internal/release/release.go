@@ -48,6 +48,9 @@ func Execute(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("%w\nArtifacts preserved at: %s", err, artifactDir)
 	}
+	if err := revalidateReleaseState(ctx, opts.Runner, env); err != nil {
+		return fmt.Errorf("%w\nArtifacts preserved at: %s", err, artifactDir)
+	}
 
 	printReleaseSummary(opts.Out, version, env.head, assets)
 	confirmed, err := prompter.Confirm()

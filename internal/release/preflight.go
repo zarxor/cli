@@ -118,6 +118,44 @@ func requireCommand(runner Runner, name string) (string, error) {
 	return path, nil
 }
 
+func revalidateReleaseState(ctx context.Context, runner Runner, env environment) error {
+	branchOutput, err := runner.Run(ctx, env.root, env.git, "symbolic-ref", "--short", "HEAD")
+	if err != nil {
+		return fmt.Errorf("revalidate current branch: %w", err)
+	}
+	branch := strings.TrimSpace(branchOutput)
+	if branch != "main" {
+		return fmt.Errorf("release still requires branch main; current branch is %q", branch)
+	}
+	status, err := runner.Run(ctx, env.root, env.git, "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("revalidate working tree: %w", err)
+	}
+	if strings.TrimSpace(status) != "" {
+		return fmt.Errorf("working tree changed during release preparation")
+	}
+	if _, err := runner.Run(ctx, env.root, env.git, "fetch", "origin", "main", "--tags"); err != nil {
+		return fmt.Errorf("refresh origin/main before publication: %w", err)
+	}
+	headOutput, err := runner.Run(ctx, env.root, env.git, "rev-parse", "HEAD")
+	if err != nil {
+		return fmt.Errorf("revalidate local HEAD: %w", err)
+	}
+	head := strings.TrimSpace(headOutput)
+	if head != env.head {
+		return fmt.Errorf("HEAD changed during release preparation: started at %s, now at %s", env.head, head)
+	}
+	remoteOutput, err := runner.Run(ctx, env.root, env.git, "rev-parse", "origin/main")
+	if err != nil {
+		return fmt.Errorf("revalidate origin/main: %w", err)
+	}
+	remoteHead := strings.TrimSpace(remoteOutput)
+	if remoteHead != env.head {
+		return fmt.Errorf("origin/main changed during release preparation: started at %s, now at %s", env.head, remoteHead)
+	}
+	return nil
+}
+
 func nonemptyLines(output string) []string {
 	var lines []string
 	for _, line := range strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n") {

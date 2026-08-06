@@ -182,6 +182,25 @@ func TestExecutePreservesArtifactsAfterPublicationFailure(t *testing.T) {
 	}
 }
 
+func TestExecuteRejectsRepositoryDriftBeforeConfirmation(t *testing.T) {
+	fixture := newWorkflowFixture(t, "1\nyes\n")
+	git := fixture.runner.paths["git"]
+	headKey := commandKey(git, "rev-parse", "HEAD")
+	fixture.runner.queues[headKey] = []fakeResponse{
+		{output: "abc123\n"},
+		{output: "changed\n"},
+	}
+	err := Execute(context.Background(), fixture.options)
+	if err == nil || !strings.Contains(err.Error(), "HEAD changed") {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	for _, call := range fixture.runner.calls {
+		if isRemoteMutation(call) {
+			t.Fatalf("remote mutation after repository drift: %s", call)
+		}
+	}
+}
+
 func isRemoteMutation(call string) bool {
 	return strings.Contains(call, "git\x00tag\x00-a\x00") ||
 		strings.Contains(call, "git\x00push\x00") ||

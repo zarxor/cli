@@ -169,3 +169,48 @@ func TestPreflightRejectsMissingDependency(t *testing.T) {
 		t.Fatalf("preflight() error = %v", err)
 	}
 }
+
+func TestRevalidateReleaseStateRejectsDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		want   string
+		mutate func(*fakeRunner)
+	}{
+		{
+			name: "branch changed", want: "branch main",
+			mutate: func(r *fakeRunner) {
+				r.responses[commandKey(r.paths["git"], "symbolic-ref", "--short", "HEAD")] = fakeResponse{output: "feature\n"}
+			},
+		},
+		{
+			name: "tree changed", want: "working tree changed",
+			mutate: func(r *fakeRunner) {
+				r.responses[commandKey(r.paths["git"], "status", "--porcelain")] = fakeResponse{output: " M README.md\n"}
+			},
+		},
+		{
+			name: "head changed", want: "HEAD changed",
+			mutate: func(r *fakeRunner) {
+				r.responses[commandKey(r.paths["git"], "rev-parse", "HEAD")] = fakeResponse{output: "changed\n"}
+			},
+		},
+		{
+			name: "remote changed", want: "origin/main changed",
+			mutate: func(r *fakeRunner) {
+				r.responses[commandKey(r.paths["git"], "rev-parse", "origin/main")] = fakeResponse{output: "changed\n"}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			runner := successfulPreflightRunner(root)
+			test.mutate(runner)
+			env := environment{root: root, head: "abc123", git: runner.paths["git"]}
+			err := revalidateReleaseState(context.Background(), runner, env)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("revalidateReleaseState() error = %v, want containing %q", err, test.want)
+			}
+		})
+	}
+}
