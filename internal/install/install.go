@@ -70,6 +70,12 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 
 	eligible := eligibleStatuses(action, statuses)
 	if len(eligible) == 0 {
+		if action == Update {
+			if err := renderer.Progress("No tool updates available."); err != nil {
+				return failedPlan(statuses, action, fmt.Errorf("render empty update plan: %w", err))
+			}
+			return Summary{}
+		}
 		if err := renderStatuses(renderer, eligible); err != nil {
 			return failedPlan(statuses, action, fmt.Errorf("render plan: %w", err))
 		}
@@ -170,10 +176,30 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 			continue
 		}
 
+		verb := "Installing"
+		if resultAction == Update {
+			verb = "Updating"
+		}
+		if err := renderer.Progress(fmt.Sprintf("%s %s…", verb, tool.Name)); err != nil {
+			result := ToolResult{
+				Tool:   tool,
+				Action: resultAction,
+				Status: "failed",
+				Err:    fmt.Errorf("render progress: %w", err),
+			}
+			summary.Results = append(summary.Results, result)
+			resultsByID[tool.ID] = result
+			summary.Failed = true
+			return summary
+		}
 		err := execute(ctx, adapter, resultAction, tool)
 		resultStatus := pastTense(resultAction)
 		if err == nil {
-			err = adapter.Verify(ctx, tool)
+			if progressErr := renderer.Progress(fmt.Sprintf("Verifying %s…", tool.Name)); progressErr != nil {
+				err = fmt.Errorf("render progress: %w", progressErr)
+			} else {
+				err = adapter.Verify(ctx, tool)
+			}
 		}
 		result := ToolResult{Tool: tool, Action: resultAction, Status: resultStatus, Err: err}
 		if err != nil {
@@ -205,6 +231,15 @@ func eligibleStatuses(action Action, statuses []ToolStatus) []ToolStatus {
 		}
 		byID[status.Tool.ID] = len(eligible)
 		eligible = append(eligible, status)
+	}
+	if action == Update {
+		updatable := eligible[:0]
+		for _, status := range eligible {
+			if hasUpdateCandidate(status) && !versionsMatch(status) {
+				updatable = append(updatable, status)
+			}
+		}
+		return updatable
 	}
 	return eligible
 }
@@ -314,13 +349,21 @@ func versionsMatch(status ToolStatus) bool {
 	return current != "" && candidate != "" && current == candidate
 }
 
+func hasUpdateCandidate(status ToolStatus) bool {
+	return strings.TrimSpace(status.CandidateVersion) != ""
+}
+
 var numericVersion = regexp.MustCompile(`[0-9]+(?:\.[0-9]+)+`)
 
 func canonicalVersion(version string) string {
-	if numeric := numericVersion.FindString(version); numeric != "" {
+	// Git for Windows embeds its platform marker between the patch and build
+	// components (for example, 2.55.0.windows.3), while package metadata writes
+	// the same version as 2.55.0.3.
+	normalized := strings.ReplaceAll(strings.ToLower(version), ".windows.", ".")
+	if numeric := numericVersion.FindString(normalized); numeric != "" {
 		return numeric
 	}
-	return strings.ToLower(strings.TrimSpace(version))
+	return strings.TrimSpace(normalized)
 }
 
 func execute(ctx context.Context, adapter adapters.Adapter, action Action, tool tools.Tool) error {

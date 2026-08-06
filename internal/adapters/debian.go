@@ -97,9 +97,12 @@ temporary=
 )
 
 type linuxAdapter struct {
-	runner    runner.Runner
-	elevation runner.Elevation
-	config    LinuxConfig
+	runner                 runner.Runner
+	elevation              runner.Elevation
+	config                 LinuxConfig
+	aptUpdated             bool
+	githubCLIConfigured    bool
+	dockerRepositoryConfig bool
 }
 
 // DebianAdapter installs tools through apt and the supported upstream apt
@@ -159,6 +162,9 @@ func (a *DebianAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.Det
 	if !ok || len(packages) == 0 {
 		return detection, nil
 	}
+	if detection.Installed && a.debianPackageOwnership(ctx, tool) == ownershipNotOwned {
+		return detection, nil
+	}
 	result, err := a.runner.Run(ctx, "apt-cache", "policy", packages[0])
 	if err != nil {
 		return detection, nil
@@ -184,7 +190,7 @@ func (a *DebianAdapter) Install(ctx context.Context, tool tools.Tool) error {
 				return err
 			}
 		}
-		if err := a.system(ctx, "apt-get", "update"); err != nil {
+		if err := a.updateAptMetadata(ctx); err != nil {
 			return err
 		}
 		if err := a.system(ctx, "apt-get", append([]string{"install", "-y"}, packages...)...); err != nil {
@@ -200,6 +206,9 @@ func (a *DebianAdapter) Install(ctx context.Context, tool tools.Tool) error {
 
 func (a *DebianAdapter) Update(ctx context.Context, tool tools.Tool) error {
 	if packages, ok := debianPackages(tool.ID); ok {
+		if a.debianPackageOwnership(ctx, tool) == ownershipNotOwned {
+			return fmt.Errorf("%s is not owned by apt; refusing to update a different installation", tool.Name)
+		}
 		if tool.ID == profile.GitHubCLI {
 			if err := a.configureGitHubCLI(ctx); err != nil {
 				return err
@@ -213,7 +222,7 @@ func (a *DebianAdapter) Update(ctx context.Context, tool tools.Tool) error {
 				if err := a.removeDockerConflicts(ctx); err != nil {
 					return err
 				}
-				if err := a.system(ctx, "apt-get", "update"); err != nil {
+				if err := a.updateAptMetadata(ctx); err != nil {
 					return err
 				}
 				if err := a.system(ctx, "apt-get", "install", "-y", "docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"); err != nil {
@@ -222,7 +231,7 @@ func (a *DebianAdapter) Update(ctx context.Context, tool tools.Tool) error {
 				return a.system(ctx, "systemctl", "enable", "--now", "docker.service")
 			}
 		}
-		if err := a.system(ctx, "apt-get", "update"); err != nil {
+		if err := a.updateAptMetadata(ctx); err != nil {
 			return err
 		}
 		return a.system(ctx, "apt-get", append([]string{"install", "--only-upgrade", "-y"}, packages...)...)
@@ -261,11 +270,93 @@ func debianPackages(id tools.ToolID) ([]string, bool) {
 	}
 }
 
+func (a *DebianAdapter) debianPackageOwnership(ctx context.Context, tool tools.Tool) ownershipStatus {
+	command, _, err := a.versionCommand(tool.ID)
+	if err != nil {
+		return ownershipUnknown
+	}
+	executable, err := a.runner.LookPath(ctx, command)
+	if err != nil {
+		// The normal planning path already detected the executable. Keep direct
+		// adapter calls compatible when they intentionally skip discovery.
+		return ownershipUnknown
+	}
+	result, err := a.runner.Run(ctx, "dpkg-query", "-S", executable)
+	if err != nil {
+		return ownershipNotOwned
+	}
+	output := strings.TrimSpace(result.Stdout + "\n" + result.Stderr)
+	if output == "" {
+		return ownershipUnknown
+	}
+	owner := packageOwnerFromDpkg(output)
+	if !packageNameMatches(owner, debianExecutablePackages(tool.ID)) {
+		return ownershipNotOwned
+	}
+	if tool.ID == profile.DockerBuildx || tool.ID == profile.DockerCompose {
+		componentPackages, _ := debianPackages(tool.ID)
+		component := componentPackages[0]
+		componentStatus := a.debianPackageInstalled(ctx, component)
+		if componentStatus == ownershipNotOwned {
+			return ownershipNotOwned
+		}
+	}
+	return ownershipOwned
+}
+
+func debianExecutablePackages(id tools.ToolID) []string {
+	switch id {
+	case profile.Docker, profile.DockerBuildx, profile.DockerCompose:
+		return []string{"docker-ce-cli"}
+	default:
+		packages, _ := debianPackages(id)
+		return packages
+	}
+}
+
+func (a *DebianAdapter) debianPackageInstalled(ctx context.Context, packageName string) ownershipStatus {
+	result, err := a.runner.Run(ctx, "dpkg-query", "-W", "-f=${db:Status-Status}", packageName)
+	if err != nil {
+		return ownershipNotOwned
+	}
+	output := strings.TrimSpace(result.Stdout + "\n" + result.Stderr)
+	if output == "" {
+		return ownershipUnknown
+	}
+	if strings.EqualFold(output, "installed") {
+		return ownershipOwned
+	}
+	return ownershipNotOwned
+}
+
+func packageOwnerFromDpkg(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if owner, _, ok := strings.Cut(line, ":"); ok {
+			return strings.TrimSpace(owner)
+		}
+	}
+	return ""
+}
+
+func packageNameMatches(owner string, expected []string) bool {
+	owner = strings.TrimSpace(strings.SplitN(owner, ":", 2)[0])
+	for _, packageName := range expected {
+		if owner == packageName {
+			return true
+		}
+	}
+	return false
+}
+
 func isDockerTool(id tools.ToolID) bool {
 	return id == profile.Docker || id == profile.DockerBuildx || id == profile.DockerCompose
 }
 
 func (a *DebianAdapter) configureGitHubCLI(ctx context.Context) error {
+	if a.githubCLIConfigured {
+		return nil
+	}
 	if err := a.system(ctx, "install", "-m", "0755", "-d", "/etc/apt/keyrings", "/etc/apt/sources.list.d"); err != nil {
 		return err
 	}
@@ -283,10 +374,18 @@ func (a *DebianAdapter) configureGitHubCLI(ctx context.Context) error {
 		return err
 	}
 	defer os.Remove(source)
-	return a.system(ctx, "install", "-m", "0644", source, "/etc/apt/sources.list.d/github-cli.list")
+	if err := a.system(ctx, "install", "-m", "0644", source, "/etc/apt/sources.list.d/github-cli.list"); err != nil {
+		return err
+	}
+	a.githubCLIConfigured = true
+	a.aptUpdated = false
+	return nil
 }
 
 func (a *DebianAdapter) configureDocker(ctx context.Context) error {
+	if a.dockerRepositoryConfig {
+		return nil
+	}
 	if a.config.Codename == "" {
 		return fmt.Errorf("Docker apt repository requires a distribution codename")
 	}
@@ -311,7 +410,12 @@ func (a *DebianAdapter) configureDocker(ctx context.Context) error {
 		return err
 	}
 	defer os.Remove(source)
-	return a.system(ctx, "install", "-m", "0644", source, "/etc/apt/sources.list.d/docker.sources")
+	if err := a.system(ctx, "install", "-m", "0644", source, "/etc/apt/sources.list.d/docker.sources"); err != nil {
+		return err
+	}
+	a.dockerRepositoryConfig = true
+	a.aptUpdated = false
+	return nil
 }
 
 func (a *DebianAdapter) removeDockerConflicts(ctx context.Context) error {
@@ -335,6 +439,17 @@ func (a linuxAdapter) system(ctx context.Context, command string, args ...string
 	}
 	_, err := a.elevation.RunElevated(ctx, command, args...)
 	return err
+}
+
+func (a *DebianAdapter) updateAptMetadata(ctx context.Context) error {
+	if a.aptUpdated {
+		return nil
+	}
+	if err := a.system(ctx, "apt-get", "update"); err != nil {
+		return err
+	}
+	a.aptUpdated = true
+	return nil
 }
 
 func (a linuxAdapter) downloadTemporary(ctx context.Context, pattern, url string) (string, error) {
@@ -452,7 +567,7 @@ func (a linuxAdapter) userToolCandidate(ctx context.Context, id tools.ToolID) (s
 }
 
 func (a linuxAdapter) verify(ctx context.Context, tool tools.Tool) error {
-	detection, err := a.detect(ctx, tool)
+	detection, err := a.detectCurrent(ctx, tool)
 	if err != nil {
 		return err
 	}

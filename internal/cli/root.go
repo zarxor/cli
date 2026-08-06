@@ -44,6 +44,7 @@ func newRootCommandWithTheme(service ToolsService, themeFor themeFactory) *cobra
 	}
 	root.AddCommand(
 		newToolsCommand(service),
+		newUpdateCommand(themeFor),
 		newVersionCommand(themeFor),
 	)
 	defaultHelp := root.HelpFunc()

@@ -76,6 +76,22 @@ func TestRendererOtherPublicOutput(t *testing.T) {
 	}
 }
 
+func TestRendererProgressBarRedrawsOneLine(t *testing.T) {
+	var output bytes.Buffer
+	r := NewPlainRenderer(&output)
+	for current := 0; current <= 3; current++ {
+		if err := r.ProgressBar("Checking installed tools", current, 3); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := strings.Count(output.String(), "\n"); got != 1 {
+		t.Fatalf("progress newlines = %d, want one: %q", got, output.String())
+	}
+	if !strings.Contains(output.String(), "[####################] 3/3") {
+		t.Fatalf("completed progress = %q, want a full progress bar", output.String())
+	}
+}
+
 func TestRendererVersionTableForcedColorStripsToPlain(t *testing.T) {
 	rows := []VersionRow{{Tool: tools.Tool{Name: "Git"}, CurrentVersion: "2.48.0", CandidateVersion: "2.49.0"}}
 	var plain, colored bytes.Buffer

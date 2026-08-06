@@ -122,6 +122,30 @@ func TestDebianDockerRemovesOnlyInstalledConflictCandidates(t *testing.T) {
 	}
 }
 
+func TestDebianDockerComponentsReuseRepositoryMetadata(t *testing.T) {
+	fixture := runner.NewFixture()
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{
+		Root: true, Home: t.TempDir(), TempDir: t.TempDir(), Distribution: "debian",
+		Codename: "bookworm", Architecture: "amd64",
+	})
+
+	for _, id := range []profile.ToolID{profile.Docker, profile.DockerBuildx, profile.DockerCompose} {
+		if err := adapter.Install(context.Background(), mustTool(t, id)); err != nil {
+			t.Fatalf("Install(%s): %v", id, err)
+		}
+	}
+
+	updates := 0
+	for _, command := range fixture.Commands {
+		if command.Command == "apt-get" && len(command.Args) == 1 && command.Args[0] == "update" {
+			updates++
+		}
+	}
+	if updates != 1 {
+		t.Fatalf("apt metadata refreshes = %d, want one shared refresh; commands = %#v", updates, fixture.Commands)
+	}
+}
+
 func TestDebianUpdateUsesAptUpgradePlan(t *testing.T) {
 	fixture := runner.NewFixture()
 	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: t.TempDir(), TempDir: t.TempDir()})
@@ -375,6 +399,32 @@ func TestDebianDetectsCandidatePackageVersion(t *testing.T) {
 	}
 }
 
+func TestDebianRefusesToUpdateManualSystemInstallation(t *testing.T) {
+	fixture := runner.NewFixture()
+	path := "/usr/local/bin/git"
+	fixture.LookPaths["git"] = path
+	fixture.Set("git", []string{"--version"}, runner.Result{Stdout: "git version 2.48.0\n"}, nil)
+	fixture.Set("dpkg-query", []string{"-S", path}, runner.Result{Stdout: "local-git: /usr/local/bin/git\n"}, nil)
+	fixture.Set("apt-cache", []string{"policy", "git"}, runner.Result{Stdout: "Candidate: 2.49.0-1\n"}, nil)
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: t.TempDir(), TempDir: t.TempDir()})
+
+	detection, err := adapter.Detect(context.Background(), mustTool(t, profile.Git))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detection.Installed || detection.Candidate != "" {
+		t.Fatalf("Detect() = %#v, want installed manual Git without update candidate", detection)
+	}
+	if err := adapter.Update(context.Background(), mustTool(t, profile.Git)); err == nil {
+		t.Fatal("Update() error = nil, want provider ownership refusal")
+	}
+	for _, command := range fixture.Commands {
+		if command.Command == "apt-get" && len(command.Args) > 0 && command.Args[0] == "install" {
+			t.Fatalf("manual Git triggered apt update: %#v", fixture.Commands)
+		}
+	}
+}
+
 func TestDebianTreatsMissingDockerComponentAsAbsent(t *testing.T) {
 	fixture := runner.NewFixture()
 	fixture.LookPaths["docker"] = "/usr/bin/docker"
@@ -555,6 +605,48 @@ func TestArchDetectsCandidatePackageVersion(t *testing.T) {
 	}
 	if got.Candidate != "2.48.0-1" {
 		t.Fatalf("candidate = %q, want 2.48.0-1", got.Candidate)
+	}
+}
+
+func TestArchRefusesToUpdateManualSystemInstallation(t *testing.T) {
+	fixture := runner.NewFixture()
+	path := "/usr/local/bin/git"
+	fixture.LookPaths["git"] = path
+	fixture.Set("git", []string{"--version"}, runner.Result{Stdout: "git version 2.48.0\n"}, nil)
+	fixture.Set("pacman", []string{"-Qo", path}, runner.Result{Stdout: "error: No package owns /usr/local/bin/git\n"}, nil)
+	fixture.Set("pacman", []string{"-Si", "git"}, runner.Result{Stdout: "Version         : 2.49.0-1\n"}, nil)
+	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{Root: true, Home: t.TempDir(), TempDir: t.TempDir()})
+
+	detection, err := adapter.Detect(context.Background(), mustTool(t, profile.Git))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detection.Installed || detection.Candidate != "" {
+		t.Fatalf("Detect() = %#v, want installed manual Git without update candidate", detection)
+	}
+	if err := adapter.Update(context.Background(), mustTool(t, profile.Git)); err == nil {
+		t.Fatal("Update() error = nil, want provider ownership refusal")
+	}
+	for _, command := range fixture.Commands {
+		if command.Command == "pacman" && len(command.Args) > 0 && command.Args[0] == "-Syu" {
+			t.Fatalf("manual Git triggered pacman update: %#v", fixture.Commands)
+		}
+	}
+}
+
+func TestDebianVerifySkipsCandidateLookup(t *testing.T) {
+	fixture := runner.NewFixture()
+	fixture.LookPaths["git"] = "/usr/bin/git"
+	fixture.Set("git", []string{"--version"}, runner.Result{Stdout: "git version 2.48.0\n"}, nil)
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: t.TempDir(), TempDir: t.TempDir()})
+
+	if err := adapter.Verify(context.Background(), mustTool(t, profile.Git)); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range fixture.Commands {
+		if command.Command == "apt-cache" {
+			t.Fatalf("Verify() performed candidate lookup: %#v", fixture.Commands)
+		}
 	}
 }
 

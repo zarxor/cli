@@ -129,6 +129,11 @@ func TestRunRendersEveryExecutedResult(t *testing.T) {
 	if want := "✓ installed Git"; !strings.Contains(output.String(), want) {
 		t.Fatalf("output %q does not contain %q", output.String(), want)
 	}
+	for _, want := range []string{"Installing Git…", "Verifying Git…"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("output %q does not contain progress stage %q", output.String(), want)
+		}
+	}
 	if strings.Contains(output.String(), "✓ up-to-date Bun") {
 		t.Fatalf("output %q renders installed Bun as an install result", output.String())
 	}
@@ -136,7 +141,7 @@ func TestRunRendersEveryExecutedResult(t *testing.T) {
 
 func TestRunStopsAfterPostMutationResultRenderingFailure(t *testing.T) {
 	wantErr := errors.New("writer failed")
-	writer := &failingWriter{failAt: 1, err: wantErr}
+	writer := &failingWriter{failAt: 3, err: wantErr}
 	adapter := &fixtureAdapter{}
 	statuses := []install.ToolStatus{{Tool: mustTool(t, profile.Git)}, {Tool: mustTool(t, profile.Bun)}}
 	summary := install.Run(context.Background(), install.Install, statuses, fixtureAdapters(adapter), install.Options{Yes: true, Writer: writer})
@@ -308,7 +313,7 @@ func TestDryRunReportsResultRenderingFailure(t *testing.T) {
 	}
 }
 
-func TestEmptyPlanReportsVersionTableRenderingFailure(t *testing.T) {
+func TestEmptyUpdatePlanReportsNoUpdateMessageRenderingFailure(t *testing.T) {
 	wantErr := errors.New("writer failed")
 	writer := &failingWriter{failAt: 0, err: wantErr}
 
@@ -340,7 +345,7 @@ func TestRunExecutesDuplicateToolsOnlyOnce(t *testing.T) {
 	}
 }
 
-func TestUpdateSkipsToolAlreadyAtCandidateVersion(t *testing.T) {
+func TestUpdateOmitsToolAlreadyAtCandidateVersion(t *testing.T) {
 	adapter := &fixtureAdapter{}
 	statuses := []install.ToolStatus{{
 		Tool:             mustTool(t, profile.Git),
@@ -354,8 +359,23 @@ func TestUpdateSkipsToolAlreadyAtCandidateVersion(t *testing.T) {
 	if summary.Failed || len(adapter.calls) != 0 {
 		t.Fatalf("Run() = %#v, adapter calls = %v", summary, adapter.calls)
 	}
-	if len(summary.Results) != 1 || summary.Results[0].Status != "up-to-date" {
-		t.Fatalf("results = %#v, want up-to-date", summary.Results)
+	if len(summary.Results) != 0 {
+		t.Fatalf("results = %#v, want no update result", summary.Results)
+	}
+}
+
+func TestUpdateOmitsInstalledToolWithoutUsableCandidate(t *testing.T) {
+	adapter := &fixtureAdapter{}
+	status := install.ToolStatus{
+		Tool:           mustTool(t, profile.Git),
+		Installed:      true,
+		CurrentVersion: "2.49.0",
+	}
+
+	summary := install.Run(context.Background(), install.Update, []install.ToolStatus{status}, fixtureAdapters(adapter), install.Options{Yes: true, Writer: &bytes.Buffer{}})
+
+	if summary.Failed || len(summary.Results) != 0 || len(adapter.calls) != 0 {
+		t.Fatalf("Run() = %#v, adapter calls = %v; want no update for unknown candidate", summary, adapter.calls)
 	}
 }
 
@@ -389,7 +409,7 @@ func TestUpdateSkipsAlreadyCurrentDockerDesktopPackage(t *testing.T) {
 	}
 }
 
-func TestUpdateNormalizesAdapterShapedVersionsBeforeLatestNoOp(t *testing.T) {
+func TestUpdateOmitsAdapterShapedVersionsThatAreAlreadyCurrent(t *testing.T) {
 	cases := []struct {
 		name      string
 		current   string
@@ -398,6 +418,7 @@ func TestUpdateNormalizesAdapterShapedVersionsBeforeLatestNoOp(t *testing.T) {
 		{name: "command prefix", current: "git version 2.49.0", candidate: "2.49.0"},
 		{name: "Debian epoch and revision", current: "git version 2.48.0", candidate: "1:2.48.0-1"},
 		{name: "command suffix", current: "Docker version 28.1.1, build 4eba377", candidate: "28.1.1"},
+		{name: "Git for Windows build suffix", current: "git version 2.55.0.windows.3", candidate: "2.55.0.3"},
 	}
 
 	for _, test := range cases {
@@ -415,8 +436,8 @@ func TestUpdateNormalizesAdapterShapedVersionsBeforeLatestNoOp(t *testing.T) {
 			if summary.Failed || len(adapter.calls) != 0 {
 				t.Fatalf("Run() = %#v, adapter calls = %v", summary, adapter.calls)
 			}
-			if len(summary.Results) != 1 || summary.Results[0].Status != "up-to-date" {
-				t.Fatalf("results = %#v, want normalized up-to-date", summary.Results)
+			if len(summary.Results) != 0 {
+				t.Fatalf("results = %#v, want no update result", summary.Results)
 			}
 		})
 	}

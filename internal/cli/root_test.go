@@ -35,7 +35,7 @@ func TestExecuteVersionWritesTrailingNewline(t *testing.T) {
 	}
 }
 
-func TestExecuteHelpListsToolsAndVersion(t *testing.T) {
+func TestExecuteHelpListsTopLevelCommands(t *testing.T) {
 	output := new(bytes.Buffer)
 	err := ExecuteWithIO(context.Background(), []string{"help"}, output, io.Discard)
 	if err != nil {
@@ -45,6 +45,9 @@ func TestExecuteHelpListsToolsAndVersion(t *testing.T) {
 		t.Fatal(output.String())
 	}
 	if !strings.Contains(output.String(), "version") {
+		t.Fatal(output.String())
+	}
+	if !strings.Contains(output.String(), "update") {
 		t.Fatal(output.String())
 	}
 	if !strings.Contains(output.String(), "completion") {

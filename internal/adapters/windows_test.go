@@ -190,7 +190,9 @@ func TestWindowsDetectsCandidatesForInstalledUserTools(t *testing.T) {
 		fixture.Set(paths["npm"], []string{"view", packageName, "version"}, runner.Result{Stdout: "2.0.0\n"}, nil)
 		_ = id
 	}
-	adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture})
+	adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture}, WindowsConfig{
+		ProgramFiles: `C:\Program Files`, NVMHome: filepath.Dir(paths["nvm"]), NVMSymlink: filepath.Dir(paths["node"]),
+	})
 	cases := []struct {
 		id   profile.ToolID
 		want string
@@ -329,6 +331,57 @@ func TestWindowsUpdatesInstalledToolFromSameWinGetSource(t *testing.T) {
 	want := []string{"upgrade", "--id", "Git.Git", "--exact", "--accept-package-agreements", "--accept-source-agreements"}
 	if got := elevation.commands[0]; got.Command != "winget" || !reflect.DeepEqual(got.Args, want) {
 		t.Fatalf("WinGet command = %#v, want winget %#v", got, want)
+	}
+}
+
+func TestWindowsRefusesToUpdateManualSystemInstallation(t *testing.T) {
+	fixture := runner.NewFixture()
+	path := `C:\tools\git\cmd\git.exe`
+	fixture.LookPaths["git"] = path
+	fixture.Set(path, []string{"--version"}, runner.Result{Stdout: "git version 2.48.0\n"}, nil)
+	fixture.Set("winget", []string{"list", "--id", "Git.Git", "--exact", "--details"}, runner.Result{Stdout: "No installed package found matching input criteria.\n"}, nil)
+	fixture.Set("winget", []string{"show", "--id", "Git.Git", "--exact"}, runner.Result{Stdout: "Version: 2.49.0\n"}, nil)
+	elevation := &windowsFixtureElevation{fixture: fixture}
+	adapter := NewWindowsAdapter(fixture, elevation)
+
+	detection, err := adapter.Detect(context.Background(), mustTool(t, profile.Git))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detection.Installed || detection.Current == "" || detection.Candidate != "" {
+		t.Fatalf("Detect() = %#v, want installed manual Git without update candidate", detection)
+	}
+	if err := adapter.Update(context.Background(), mustTool(t, profile.Git)); err == nil {
+		t.Fatal("Update() error = nil, want provider ownership refusal")
+	}
+	for _, command := range elevation.commands {
+		if command.Command == "winget" && len(command.Args) > 0 && command.Args[0] == "upgrade" {
+			t.Fatalf("manual Git triggered WinGet upgrade: %#v", elevation.commands)
+		}
+	}
+}
+
+func TestWindowsDoesNotOfferStandaloneNodeForNVMUpdate(t *testing.T) {
+	fixture := runner.NewFixture()
+	nodePath := `C:\tools\node\node.exe`
+	nvmPath := `C:\Users\johan\AppData\Roaming\nvm\nvm.exe`
+	fixture.LookPaths["node"] = nodePath
+	fixture.LookPaths["nvm"] = nvmPath
+	fixture.Set(nodePath, []string{"--version"}, runner.Result{Stdout: "v22.1.0\n"}, nil)
+	fixture.Set(nvmPath, []string{"list", "available"}, runner.Result{Stdout: "| CURRENT | LTS |\n| 26.1.0 | 24.5.0 |\n"}, nil)
+	adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture}, WindowsConfig{
+		ProgramFiles: `C:\Program Files`, NVMHome: filepath.Dir(nvmPath), NVMSymlink: `C:\Program Files\nodejs`,
+	})
+
+	detection, err := adapter.Detect(context.Background(), mustTool(t, profile.Node))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detection.Installed || detection.Current != "v22.1.0" || detection.Candidate != "" {
+		t.Fatalf("Detect() = %#v, want standalone Node without an NVM candidate", detection)
+	}
+	if err := adapter.Update(context.Background(), mustTool(t, profile.Node)); err == nil {
+		t.Fatal("Update() error = nil, want provider ownership refusal")
 	}
 }
 
@@ -513,7 +566,9 @@ func TestWindowsNodeInstallAndUpdateUseElevatedNVMSequence(t *testing.T) {
 			}
 			elevation := &windowsFixtureElevation{fixture: fixture}
 
-			if err := test.run(NewWindowsAdapter(fixture, elevation)); err != nil {
+			if err := test.run(NewWindowsAdapter(fixture, elevation, WindowsConfig{
+				ProgramFiles: `C:\Program Files`, NVMHome: filepath.Dir(nvmPath), NVMSymlink: `C:\Program Files\nodejs`,
+			})); err != nil {
 				t.Fatal(err)
 			}
 			want := []runner.Command{

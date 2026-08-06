@@ -3,13 +3,18 @@ package render
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // Renderer writes semantic, human-facing CLI output.
 type Renderer struct {
-	writer io.Writer
-	theme  Theme
+	writer         io.Writer
+	theme          Theme
+	interactive    bool
+	progressActive bool
 }
 
 type ResultRow struct {
@@ -23,7 +28,11 @@ func NewRenderer(writer io.Writer, theme Theme) *Renderer {
 	if writer == nil {
 		writer = io.Discard
 	}
-	return &Renderer{writer: writer, theme: theme}
+	interactive := false
+	if file, ok := writer.(*os.File); ok {
+		interactive = term.IsTerminal(int(file.Fd()))
+	}
+	return &Renderer{writer: writer, theme: theme, interactive: interactive}
 }
 
 func NewPlainRenderer(writer io.Writer) *Renderer {
@@ -62,6 +71,51 @@ func (r *Renderer) Error(err error) error {
 	return r.line(r.theme.Danger("✗") + " " + r.theme.Danger("error: "+err.Error()))
 }
 
+// Progress reports a long-running stage without implying that the operation
+// has completed. It intentionally uses a full line so redirected output stays
+// readable and terminals do not need cursor-control support.
+func (r *Renderer) Progress(message string) error {
+	return r.line(r.theme.Muted("• " + message))
+}
+
+// ProgressBar redraws one progress line and finishes it with a newline when
+// the operation reaches total. Carriage returns keep redirected output
+// compact, while terminals also receive a clear-line escape before redraws.
+func (r *Renderer) ProgressBar(label string, current, total int) error {
+	if current < 0 || total < 0 || current > total {
+		return fmt.Errorf("invalid progress %d/%d", current, total)
+	}
+	const width = 20
+	filled := 0
+	if total > 0 {
+		filled = current * width / total
+	}
+	bar := strings.Repeat("#", filled) + strings.Repeat("-", width-filled)
+	message := fmt.Sprintf("• %s [%s] %d/%d", label, bar, current, total)
+	prefix := "\r"
+	if r.interactive {
+		prefix += "\x1b[2K"
+	}
+	if _, err := fmt.Fprint(r.writer, prefix+r.theme.Muted(message)); err != nil {
+		return err
+	}
+	r.progressActive = true
+	if current == total {
+		return r.FinishProgress()
+	}
+	return nil
+}
+
+// FinishProgress terminates an active progress line before subsequent output.
+func (r *Renderer) FinishProgress() error {
+	if !r.progressActive {
+		return nil
+	}
+	r.progressActive = false
+	_, err := fmt.Fprintln(r.writer)
+	return err
+}
+
 // Help applies restrained semantic styling to already-rendered Cobra help.
 func (r *Renderer) Help(help string) error {
 	lines := strings.Split(strings.TrimSuffix(help, "\n"), "\n")
@@ -82,6 +136,9 @@ func (r *Renderer) Help(help string) error {
 }
 
 func (r *Renderer) line(value string) error {
+	if err := r.FinishProgress(); err != nil {
+		return err
+	}
 	_, err := fmt.Fprintln(r.writer, value)
 	return err
 }

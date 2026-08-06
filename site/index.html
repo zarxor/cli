@@ -96,7 +96,7 @@
       <section class="section section-dark" id="commands" aria-labelledby="commands-title">
         <div class="container">
           <div class="section-heading">
-            <h2 id="commands-title">Install and update tools</h2>
+            <h2 id="commands-title">Install and update</h2>
             <p>Plans are shown before changes are made. Add <code>--yes</code> for automation or <code>--dry-run</code> to inspect a plan without changing your machine.</p>
           </div>
           <div class="command-grid">
@@ -152,8 +152,17 @@ Already installed
               </div>
             </article>
             <article class="command-card">
+              <div class="command-card-heading"><h3>Update jb itself</h3><span class="command-meta">release</span></div>
+              <p>Download the latest CLI release, verify its checksum, and replace the installed binary.</p>
+              <div class="code-block">
+                <pre><code>jb update</code></pre>
+                <button class="copy-button" type="button" data-copy-button aria-label="Copy the CLI update command">Copy</button>
+                <span class="copy-status" data-copy-status aria-live="polite"></span>
+              </div>
+            </article>
+            <article class="command-card">
               <div class="command-card-heading"><h3>Update installed tools</h3><span class="command-meta">refresh</span></div>
-              <p>Discover installed tools and their versions live, then update only what is already installed.</p>
+              <p>Discover installed tools and their versions live, then show only provider-owned tools with an available update. Ambiguous installations are left untouched.</p>
               <div class="code-block">
                 <pre><code>jb tools update</code></pre>
                 <button class="copy-button" type="button" data-copy-button aria-label="Copy the tools update command">Copy</button>

@@ -9,9 +9,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/zarxor/scripts/internal/adapters"
+	"github.com/zarxor/scripts/internal/detect"
 	"github.com/zarxor/scripts/internal/install"
 	"github.com/zarxor/scripts/internal/plan"
 	"github.com/zarxor/scripts/internal/platform"
@@ -138,19 +140,16 @@ func (s *toolsService) Run(ctx context.Context, request ToolsRequest) error {
 		return err
 	}
 
-	statuses := make([]install.ToolStatus, 0, len(planned))
-	for _, tool := range planned {
-		detection, detectErr := adapter.Detect(ctx, tool)
-		if detectErr != nil {
-			return fmt.Errorf("detect %s: %w", tool.Name, detectErr)
-		}
-		statuses = append(statuses, install.ToolStatus{
-			Tool:             tool,
-			Installed:        detection.Installed,
-			Selected:         true,
-			CurrentVersion:   detection.Current,
-			CandidateVersion: detection.Candidate,
-		})
+	renderer := request.Renderer
+	if renderer == nil {
+		renderer = render.NewPlainRenderer(request.Writer)
+	}
+	if err := renderer.ProgressBar("Checking installed tools", 0, len(planned)); err != nil {
+		return fmt.Errorf("render discovery progress: %w", err)
+	}
+	statuses, err := detectTools(ctx, adapter, planned, renderer)
+	if err != nil {
+		return err
 	}
 
 	// Run accepts an adapter set keyed by its own live platform detection.
@@ -165,7 +164,7 @@ func (s *toolsService) Run(ctx context.Context, request ToolsRequest) error {
 		Yes:       request.Yes,
 		DryRun:    request.DryRun,
 		Writer:    request.Writer,
-		Renderer:  request.Renderer,
+		Renderer:  renderer,
 		Selection: request.Selection,
 	})
 	if !summary.Failed {
@@ -177,6 +176,92 @@ func (s *toolsService) Run(ctx context.Context, request ToolsRequest) error {
 		}
 	}
 	return fmt.Errorf("tools %s failed", request.Action)
+}
+
+// Detection is mostly command and network I/O. Keep it bounded so a full
+// catalog starts quickly without launching an unbounded provider fan-out.
+const detectionWorkers = 4
+
+type detectionResult struct {
+	index     int
+	detection detect.Detection
+	err       error
+}
+
+func detectTools(ctx context.Context, adapter adapters.Adapter, planned []tools.Tool, renderer *render.Renderer) ([]install.ToolStatus, error) {
+	if len(planned) == 0 {
+		return nil, nil
+	}
+
+	scanContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	jobs := make(chan int)
+	results := make(chan detectionResult, len(planned))
+	workerCount := len(planned)
+	if workerCount > detectionWorkers {
+		workerCount = detectionWorkers
+	}
+
+	var workers sync.WaitGroup
+	for worker := 0; worker < workerCount; worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				detection, err := adapter.Detect(scanContext, planned[index])
+				results <- detectionResult{index: index, detection: detection, err: err}
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for index := range planned {
+			select {
+			case jobs <- index:
+			case <-scanContext.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+
+	statuses := make([]install.ToolStatus, len(planned))
+	completed := 0
+	var firstErr error
+	for result := range results {
+		completed++
+		if result.err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("detect %s: %w", planned[result.index].Name, result.err)
+				cancel()
+			}
+			continue
+		}
+		tool := planned[result.index]
+		statuses[result.index] = install.ToolStatus{
+			Tool:             tool,
+			Installed:        result.detection.Installed,
+			Selected:         true,
+			CurrentVersion:   result.detection.Current,
+			CandidateVersion: result.detection.Candidate,
+		}
+		if err := renderer.ProgressBar("Checking installed tools", completed, len(planned)); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("render discovery progress: %w", err)
+			cancel()
+		}
+	}
+	if firstErr != nil {
+		_ = renderer.FinishProgress()
+		return nil, firstErr
+	}
+	if err := ctx.Err(); err != nil {
+		_ = renderer.FinishProgress()
+		return nil, err
+	}
+	return statuses, nil
 }
 
 func requestedTools(action install.Action, profiles []profile.Profile, only []tools.ToolID) ([]tools.Tool, error) {

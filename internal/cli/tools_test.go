@@ -8,7 +8,9 @@ import (
 	"os/user"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/zarxor/scripts/internal/adapters"
 	"github.com/zarxor/scripts/internal/detect"
@@ -50,7 +52,7 @@ func TestToolsInstallPassesProfileSelectionThroughPlanner(t *testing.T) {
 	}
 
 	want := []tools.ToolID{profile.Docker, profile.DockerBuildx, profile.DockerCompose}
-	if got := adapter.detected; !reflect.DeepEqual(got, want) {
+	if got := adapter.detectedIDs(); !sameToolIDs(got, want) {
 		t.Fatalf("detected tool IDs = %v, want planner-expanded %v", got, want)
 	}
 }
@@ -68,8 +70,8 @@ func TestToolsUpdateWithoutProfilesScansEverySupportedInstalledTool(t *testing.T
 	for i, tool := range tools.Catalog {
 		wantDetected[i] = tool.ID
 	}
-	if !reflect.DeepEqual(adapter.detected, wantDetected) {
-		t.Fatalf("detected tool IDs = %v, want full catalog %v", adapter.detected, wantDetected)
+	if got := adapter.detectedIDs(); !sameToolIDs(got, wantDetected) {
+		t.Fatalf("detected tool IDs = %v, want full catalog %v", got, wantDetected)
 	}
 	if got, want := adapter.calls, []string{"update:git", "verify:git"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("adapter calls = %v, want %v", got, want)
@@ -88,6 +90,30 @@ func TestToolsUpdateOnlyNarrowsLiveScan(t *testing.T) {
 	}
 	if len(adapter.calls) != 0 {
 		t.Fatalf("dry-run adapter mutations = %v, want none", adapter.calls)
+	}
+}
+
+func TestToolsUpdateShowsOnlyToolsWithAvailableUpdates(t *testing.T) {
+	adapter := newFixtureAdapter()
+	adapter.detections[profile.Git] = detect.Detection{Installed: true, Current: "2.49.0", Candidate: "2.49.0"}
+	adapter.detections[profile.Bun] = detect.Detection{Installed: true, Current: "1.1.0", Candidate: "1.2.0"}
+	var output bytes.Buffer
+	err := fixtureService(adapter).Run(context.Background(), ToolsRequest{
+		Action:   install.Update,
+		Only:     []tools.ToolID{profile.Git, profile.Bun},
+		Yes:      true,
+		DryRun:   true,
+		Writer:   &output,
+		Renderer: render.NewPlainRenderer(&output),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "Git") {
+		t.Fatalf("update output includes an already-current tool: %q", output.String())
+	}
+	if !strings.Contains(output.String(), "Bun") || !strings.Contains(output.String(), "dry-run") {
+		t.Fatalf("update output = %q, want only updateable Bun", output.String())
 	}
 }
 
@@ -116,8 +142,8 @@ func TestToolsInstallWithoutScopePlansFullCatalog(t *testing.T) {
 	for index, tool := range tools.Catalog {
 		want[index] = tool.ID
 	}
-	if !reflect.DeepEqual(adapter.detected, want) {
-		t.Fatalf("detected tool IDs = %v, want full catalog %v", adapter.detected, want)
+	if got := adapter.detectedIDs(); !sameToolIDs(got, want) {
+		t.Fatalf("detected tool IDs = %v, want full catalog %v", got, want)
 	}
 	if len(adapter.calls) != 0 {
 		t.Fatalf("dry-run adapter mutations = %v, want none", adapter.calls)
@@ -155,6 +181,50 @@ func TestToolsInstallWithoutScopePreselectsFullCatalog(t *testing.T) {
 	for index, item := range selection.items {
 		if item.Tool.ID != tools.Catalog[index].ID || !item.Selected {
 			t.Fatalf("selection item %d = %#v, want preselected %s", index, item, tools.Catalog[index].ID)
+		}
+	}
+}
+
+func TestToolsServiceReportsDiscoveryAndDetectsInParallel(t *testing.T) {
+	adapter := newDetectionProbeAdapter()
+	defer adapter.releaseAll()
+	var output bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- fixtureService(adapter).Run(context.Background(), ToolsRequest{
+			Action:   install.Install,
+			Only:     []tools.ToolID{profile.Git, profile.GitHubCLI},
+			Yes:      true,
+			DryRun:   true,
+			Writer:   &output,
+			Renderer: render.NewPlainRenderer(&output),
+		})
+	}()
+
+	select {
+	case <-adapter.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first detection")
+	}
+	if !strings.Contains(output.String(), "Checking") {
+		t.Fatalf("discovery output = %q, want loading feedback before detection completes", output.String())
+	}
+	select {
+	case <-adapter.secondStarted:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("second detection did not start while the first detection was blocked")
+	}
+
+	adapter.releaseAll()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "2/2") {
+		t.Fatalf("discovery output = %q, want completion feedback", output.String())
+	}
+	for _, line := range strings.Split(output.String(), "\n") {
+		if strings.Contains(line, "Checking installed tools") && (strings.Contains(line, "Git") || strings.Contains(line, "GitHub CLI")) {
+			t.Fatalf("discovery progress includes a tool name: %q", line)
 		}
 	}
 }
@@ -314,6 +384,7 @@ func (s *recordingToolsService) Run(_ context.Context, request ToolsRequest) err
 }
 
 type fixtureAdapter struct {
+	mu            sync.Mutex
 	detected      []tools.ToolID
 	detections    map[tools.ToolID]detect.Detection
 	detectionErrs map[tools.ToolID]error
@@ -321,6 +392,54 @@ type fixtureAdapter struct {
 	updateErrors  map[tools.ToolID]error
 	verifyErrors  map[tools.ToolID]error
 	calls         []string
+}
+
+type detectionProbeAdapter struct {
+	mu            sync.Mutex
+	started       int
+	firstStarted  chan struct{}
+	secondStarted chan struct{}
+	release       chan struct{}
+	firstOnce     sync.Once
+	secondOnce    sync.Once
+	releaseOnce   sync.Once
+}
+
+func newDetectionProbeAdapter() *detectionProbeAdapter {
+	return &detectionProbeAdapter{
+		firstStarted:  make(chan struct{}),
+		secondStarted: make(chan struct{}),
+		release:       make(chan struct{}),
+	}
+}
+
+func (a *detectionProbeAdapter) Detect(ctx context.Context, _ tools.Tool) (detect.Detection, error) {
+	a.mu.Lock()
+	a.started++
+	started := a.started
+	a.mu.Unlock()
+	if started == 1 {
+		a.firstOnce.Do(func() { close(a.firstStarted) })
+	}
+	if started == 2 {
+		a.secondOnce.Do(func() { close(a.secondStarted) })
+	}
+	select {
+	case <-a.release:
+		return detect.Detection{}, nil
+	case <-ctx.Done():
+		return detect.Detection{}, ctx.Err()
+	}
+}
+
+func (a *detectionProbeAdapter) Install(context.Context, tools.Tool) error { return nil }
+
+func (a *detectionProbeAdapter) Update(context.Context, tools.Tool) error { return nil }
+
+func (a *detectionProbeAdapter) Verify(context.Context, tools.Tool) error { return nil }
+
+func (a *detectionProbeAdapter) releaseAll() {
+	a.releaseOnce.Do(func() { close(a.release) })
 }
 
 func newFixtureAdapter() *fixtureAdapter {
@@ -334,8 +453,16 @@ func newFixtureAdapter() *fixtureAdapter {
 }
 
 func (a *fixtureAdapter) Detect(_ context.Context, tool tools.Tool) (detect.Detection, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.detected = append(a.detected, tool.ID)
 	return a.detections[tool.ID], a.detectionErrs[tool.ID]
+}
+
+func (a *fixtureAdapter) detectedIDs() []tools.ToolID {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]tools.ToolID(nil), a.detected...)
 }
 
 func (a *fixtureAdapter) Install(_ context.Context, tool tools.Tool) error {
@@ -361,3 +488,25 @@ func fixtureService(adapter adapters.Adapter) ToolsService {
 
 var _ ToolsService = (*recordingToolsService)(nil)
 var _ adapters.Adapter = (*fixtureAdapter)(nil)
+
+func sameToolIDs(got, want []tools.ToolID) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	counts := make(map[tools.ToolID]int, len(want))
+	for _, id := range want {
+		counts[id]++
+	}
+	for _, id := range got {
+		counts[id]--
+		if counts[id] < 0 {
+			return false
+		}
+	}
+	for _, count := range counts {
+		if count != 0 {
+			return false
+		}
+	}
+	return true
+}

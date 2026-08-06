@@ -141,6 +141,18 @@ dependencies are still added):
 jb tools install --only=git,bun
 ```
 
+## Update `jb` itself
+
+```text
+jb update
+```
+
+`jb update` downloads the latest release for the current operating system and
+architecture, verifies its SHA-256 checksum, and replaces the installed CLI.
+Use `jb update --dry-run` to download and validate the release without changing
+the installed binary. On Windows, the final replacement completes immediately
+after the command exits so the running executable can be unlocked safely.
+
 ## Update installed tools
 
 ```text
@@ -148,8 +160,11 @@ jb tools update
 ```
 
 For every invocation, `jb tools update` discovers installed tools and versions live,
-checks current candidate versions, and shows only tools that are already
-installed. Installed tools are selected by default before confirmation.
+checks current candidate versions, and shows only installed tools with an
+available update. Updateable tools are selected by default before confirmation.
+Updates are conservative: the active executable must match the adapter's
+package provider (WinGet, apt, pacman, or the configured NVM/npm path); ambiguous
+installations are left untouched.
 No local state database is used; neither are telemetry, selection history, or a
 hidden service.
 

@@ -2,6 +2,8 @@ package adapters
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/zarxor/scripts/internal/detect"
 	"github.com/zarxor/scripts/internal/profile"
@@ -24,6 +26,9 @@ func (a *ArchAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.Detec
 	}
 	packageName, ok := archPackage(tool.ID)
 	if !ok {
+		return detection, nil
+	}
+	if detection.Installed && a.archPackageOwnership(ctx, tool, packageName) == ownershipNotOwned {
 		return detection, nil
 	}
 	result, err := a.runner.Run(ctx, "pacman", "-Si", packageName)
@@ -49,9 +54,52 @@ func (a *ArchAdapter) Install(ctx context.Context, tool tools.Tool) error {
 
 func (a *ArchAdapter) Update(ctx context.Context, tool tools.Tool) error {
 	if packageName, ok := archPackage(tool.ID); ok {
+		if a.archPackageOwnership(ctx, tool, packageName) == ownershipNotOwned {
+			return fmt.Errorf("%s is not owned by pacman; refusing to update a different installation", tool.Name)
+		}
 		return a.system(ctx, "pacman", "-Syu", "--noconfirm", "--needed", packageName)
 	}
 	return a.updateUserTool(ctx, tool)
+}
+
+func (a *ArchAdapter) archPackageOwnership(ctx context.Context, tool tools.Tool, packageName string) ownershipStatus {
+	command, _, err := a.versionCommand(tool.ID)
+	if err != nil {
+		return ownershipUnknown
+	}
+	executable, err := a.runner.LookPath(ctx, command)
+	if err != nil {
+		return ownershipUnknown
+	}
+	result, err := a.runner.Run(ctx, "pacman", "-Qo", executable)
+	if err != nil {
+		return ownershipNotOwned
+	}
+	output := strings.TrimSpace(result.Stdout + "\n" + result.Stderr)
+	if output == "" {
+		return ownershipUnknown
+	}
+	if !strings.Contains(strings.ToLower(output), " is owned by "+strings.ToLower(archExecutablePackage(tool.ID))) {
+		return ownershipNotOwned
+	}
+	if tool.ID == profile.DockerBuildx || tool.ID == profile.DockerCompose {
+		result, err := a.runner.Run(ctx, "pacman", "-Q", packageName)
+		if err != nil {
+			return ownershipNotOwned
+		}
+		if strings.TrimSpace(result.Stdout+"\n"+result.Stderr) == "" {
+			return ownershipUnknown
+		}
+	}
+	return ownershipOwned
+}
+
+func archExecutablePackage(id tools.ToolID) string {
+	if id == profile.DockerBuildx || id == profile.DockerCompose {
+		return "docker"
+	}
+	packageName, _ := archPackage(id)
+	return packageName
 }
 
 func (a *ArchAdapter) Verify(ctx context.Context, tool tools.Tool) error {

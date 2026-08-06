@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+	"sync"
 
 	"github.com/zarxor/scripts/internal/detect"
 	"github.com/zarxor/scripts/internal/profile"
@@ -21,9 +23,12 @@ type WindowsAdapter struct {
 	elevation                runner.Elevation
 	config                   WindowsConfig
 	converged                map[string]struct{}
+	dockerDesktopVersionsMu  sync.Mutex
 	dockerDesktopVersionsSet bool
 	dockerDesktopCurrent     string
 	dockerDesktopCandidate   string
+	wingetPackagesMu         sync.Mutex
+	wingetPackages           map[string]wingetPackageInfo
 }
 
 type WindowsConfig struct {
@@ -37,6 +42,11 @@ type windowsToolSource struct {
 	version    []string
 	packageID  string
 	system     bool
+}
+
+type wingetPackageInfo struct {
+	status  ownershipStatus
+	current string
 }
 
 // windowsSources is the one source of truth for WinGet identities and
@@ -76,7 +86,7 @@ func NewWindowsAdapter(commandRunner runner.Runner, elevation runner.Elevation, 
 	}
 	return &WindowsAdapter{
 		runner: commandRunner, elevation: elevation, config: config,
-		converged: make(map[string]struct{}),
+		converged: make(map[string]struct{}), wingetPackages: make(map[string]wingetPackageInfo),
 	}
 }
 
@@ -86,20 +96,12 @@ func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.De
 		return detect.Detection{}, a.unsupported(tool)
 	}
 
-	detection := detect.Detection{}
-	if executable, err := a.resolveExecutable(ctx, source.executable); err == nil {
-		result, err := a.runner.Run(ctx, executable, source.version...)
-		if err != nil {
-			if !expectedMissingComponent(tool.ID, result) && !expectedMissingComponentExecutable(source.executable, result) {
-				return detection, err
-			}
-		} else {
-			detection.Installed = true
-			detection.Current = detect.ParseVersion(result.Stdout, result.Stderr)
-		}
+	detection, err := a.detectInstalled(ctx, tool, source)
+	if err != nil {
+		return detection, err
 	}
 	if source.packageID != "" {
-		if isDockerTool(tool.ID) && detection.Installed {
+		if isDockerTool(tool.ID) {
 			current, candidate := a.dockerDesktopVersions(ctx)
 			if current != "" {
 				detection.Current = current
@@ -107,13 +109,16 @@ func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.De
 			if candidate != "" {
 				detection.Candidate = candidate
 			}
-		} else {
+		} else if a.wingetPackage(ctx, source.packageID).status != ownershipNotOwned {
 			result, err := a.runner.Run(ctx, "winget", "show", "--id", source.packageID, "--exact")
 			if err == nil {
 				detection.Candidate = labeledValue(result.Stdout, "Version")
 			}
 		}
 	} else if detection.Installed {
+		if tool.ID == profile.Node && !a.nodeUsesNVM(ctx) {
+			return detection, nil
+		}
 		candidate, err := a.userToolCandidate(ctx, tool.ID)
 		if err != nil {
 			return detection, nil
@@ -123,19 +128,81 @@ func (a *WindowsAdapter) Detect(ctx context.Context, tool tools.Tool) (detect.De
 	return detection, nil
 }
 
+func (a *WindowsAdapter) detectInstalled(ctx context.Context, tool tools.Tool, source windowsToolSource) (detect.Detection, error) {
+	detection := detect.Detection{}
+	if executable, resolveErr := a.resolveExecutable(ctx, source.executable); resolveErr == nil {
+		result, runErr := a.runner.Run(ctx, executable, source.version...)
+		if runErr != nil {
+			if !expectedMissingComponent(tool.ID, result) && !expectedMissingComponentExecutable(source.executable, result) {
+				return detection, runErr
+			}
+		} else {
+			detection.Installed = true
+			detection.Current = detect.ParseVersion(result.Stdout, result.Stderr)
+		}
+	}
+	return detection, nil
+}
+
 func (a *WindowsAdapter) dockerDesktopVersions(ctx context.Context) (string, string) {
+	a.dockerDesktopVersionsMu.Lock()
+	defer a.dockerDesktopVersionsMu.Unlock()
 	if a.dockerDesktopVersionsSet {
 		return a.dockerDesktopCurrent, a.dockerDesktopCandidate
 	}
 	a.dockerDesktopVersionsSet = true
 	packageID := windowsSources[profile.Docker].packageID
-	if result, err := a.runner.Run(ctx, "winget", "list", "--id", packageID, "--exact", "--details"); err == nil {
-		a.dockerDesktopCurrent = labeledValue(result.Stdout, "Version")
+	packageInfo := a.wingetPackage(ctx, packageID)
+	if packageInfo.status == ownershipNotOwned {
+		return "", ""
 	}
+	a.dockerDesktopCurrent = packageInfo.current
 	if result, err := a.runner.Run(ctx, "winget", "show", "--id", packageID, "--exact"); err == nil {
 		a.dockerDesktopCandidate = labeledValue(result.Stdout, "Version")
 	}
 	return a.dockerDesktopCurrent, a.dockerDesktopCandidate
+}
+
+func (a *WindowsAdapter) wingetPackage(ctx context.Context, packageID string) wingetPackageInfo {
+	a.wingetPackagesMu.Lock()
+	defer a.wingetPackagesMu.Unlock()
+	if packageInfo, ok := a.wingetPackages[packageID]; ok {
+		return packageInfo
+	}
+
+	result, err := a.runner.Run(ctx, "winget", "list", "--id", packageID, "--exact", "--details")
+	packageInfo := parseWinGetPackageInfo(packageID, result, err)
+	a.wingetPackages[packageID] = packageInfo
+	return packageInfo
+}
+
+func parseWinGetPackageInfo(packageID string, result runner.Result, err error) wingetPackageInfo {
+	output := strings.TrimSpace(result.Stdout + "\n" + result.Stderr)
+	if err != nil {
+		return wingetPackageInfo{status: ownershipNotOwned}
+	}
+	if output == "" {
+		return wingetPackageInfo{status: ownershipUnknown}
+	}
+	current := labeledValue(result.Stdout, "Version")
+	if current == "" {
+		current = labeledValue(result.Stderr, "Version")
+	}
+	if current != "" || containsOutputToken(output, packageID) {
+		return wingetPackageInfo{status: ownershipOwned, current: current}
+	}
+	return wingetPackageInfo{status: ownershipNotOwned}
+}
+
+func containsOutputToken(output, expected string) bool {
+	for _, field := range strings.FieldsFunc(output, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '|' || r == ':' || r == ','
+	}) {
+		if strings.EqualFold(strings.Trim(field, "\"'"), expected) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *WindowsAdapter) userToolCandidate(ctx context.Context, id tools.ToolID) (string, error) {
@@ -170,6 +237,27 @@ func (a *WindowsAdapter) userToolCandidate(ctx context.Context, id tools.ToolID)
 		return "", err
 	}
 	return detect.ParseVersion(result.Stdout, result.Stderr), nil
+}
+
+func (a *WindowsAdapter) nodeUsesNVM(ctx context.Context) bool {
+	node, err := a.resolveExecutable(ctx, "node")
+	if err != nil {
+		return false
+	}
+	if a.config.NVMSymlink == "" {
+		return false
+	}
+	if !filepath.IsAbs(a.config.NVMSymlink) {
+		// Test and embedded environments may not expose ProgramFiles. The
+		// conventional NVM for Windows link directory is still identifiable.
+		return strings.EqualFold(filepath.Base(filepath.Dir(node)), "nodejs")
+	}
+	relative, err := filepath.Rel(filepath.Clean(a.config.NVMSymlink), filepath.Clean(node))
+	if err != nil {
+		return false
+	}
+	relative = strings.ToLower(relative)
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func (a *WindowsAdapter) resolveExecutable(ctx context.Context, name string) (string, error) {
@@ -224,7 +312,7 @@ func (a *WindowsAdapter) Update(ctx context.Context, tool tools.Tool) error {
 	if !ok {
 		return a.unsupported(tool)
 	}
-	detection, err := a.Detect(ctx, tool)
+	detection, err := a.detectInstalled(ctx, tool, source)
 	if err != nil {
 		return err
 	}
@@ -232,13 +320,23 @@ func (a *WindowsAdapter) Update(ctx context.Context, tool tools.Tool) error {
 		return nil
 	}
 	if source.packageID != "" {
+		if a.wingetPackage(ctx, source.packageID).status == ownershipNotOwned {
+			return fmt.Errorf("%s is not managed by WinGet; refusing to update a different installation", tool.Name)
+		}
 		return a.winGet(ctx, "upgrade", source)
+	}
+	if tool.ID == profile.Node && !a.nodeUsesNVM(ctx) {
+		return fmt.Errorf("%s is not managed by nvm; refusing to update a different installation", tool.Name)
 	}
 	return a.updateUserTool(ctx, tool)
 }
 
 func (a *WindowsAdapter) Verify(ctx context.Context, tool tools.Tool) error {
-	detection, err := a.Detect(ctx, tool)
+	source, ok := windowsSources[tool.ID]
+	if !ok {
+		return a.unsupported(tool)
+	}
+	detection, err := a.detectInstalled(ctx, tool, source)
 	if err != nil {
 		return err
 	}
@@ -275,6 +373,14 @@ func (a *WindowsAdapter) winGet(ctx context.Context, action string, source windo
 	}
 	if err == nil {
 		a.converged[source.packageID] = struct{}{}
+		a.dockerDesktopVersionsMu.Lock()
+		a.dockerDesktopVersionsSet = false
+		a.dockerDesktopCurrent = ""
+		a.dockerDesktopCandidate = ""
+		a.dockerDesktopVersionsMu.Unlock()
+		a.wingetPackagesMu.Lock()
+		delete(a.wingetPackages, source.packageID)
+		a.wingetPackagesMu.Unlock()
 	}
 	return err
 }
