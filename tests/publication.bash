@@ -9,7 +9,8 @@ source "$TEST_DIR/test_helper.bash"
 cd "$REPO_ROOT" || exit 1
 
 if [[ -f CNAME ]]; then
-  assert_eq cli.johanbostrom.se "$(<CNAME)" "CNAME declares the CLI domain"
+  cname=$(tr -d '\r\n' <CNAME)
+  assert_eq cli.johanbostrom.se "$cname" "CNAME declares the CLI domain"
 else
   fail "CNAME declares the CLI domain"
 fi
@@ -22,10 +23,15 @@ for installer in install.sh install.ps1; do
   fi
 done
 
-script_mode=$(git ls-files --stage install.sh | awk '{print $1}')
+git_bin=git
+if command -v git.exe >/dev/null 2>&1; then
+  git_bin=git.exe
+fi
+
+script_mode=$($git_bin ls-files --stage install.sh | awk '{print $1}')
 assert_eq 100755 "$script_mode" "the Linux bootstrap installer is executable in Git"
 
-shell_eol=$(git check-attr eol -- install.sh | awk '{print $3}')
+shell_eol=$($git_bin check-attr eol -- install.sh | awk '{print $3}')
 assert_eq lf "$shell_eol" "Git preserves LF line endings for the Linux bootstrap installer"
 
 readme=$(<README.md)
@@ -47,6 +53,36 @@ assert_contains "$readme" "GitHub Releases" "README explains binary publication"
 assert_contains "$readme" "JB_RELEASE_BASE_URL" "README documents the release-server override"
 assert_not_contains "$readme" "scripts.johanbostrom.se" "README removes the old public URL"
 assert_not_contains "$readme" "linux/dev-server/setup.sh" "README removes the retired installer path"
+
+for site_file in site/index.html site/styles.css; do
+  if [[ -f "$site_file" ]]; then
+    pass "$site_file is present in the published site source"
+  else
+    fail "$site_file is present in the published site source"
+  fi
+done
+
+site_page=""
+if [[ -f site/index.html ]]; then
+  site_page=$(<site/index.html)
+fi
+
+assert_contains "$site_page" 'href="styles.css"' "site page loads its local stylesheet"
+assert_contains "$site_page" "Johan Bostrom CLI" "site page uses the product name"
+assert_contains "$site_page" 'href="/install.sh"' "site page links to the Linux installer"
+assert_contains "$site_page" 'href="/install.ps1"' "site page links to the Windows installer"
+assert_contains "$site_page" "Debian/Ubuntu" "site page names Debian and Ubuntu support"
+assert_contains "$site_page" "Arch Linux" "site page names Arch support"
+assert_contains "$site_page" "Windows" "site page names Windows support"
+assert_contains "$site_page" "macOS" "site page identifies macOS support status"
+assert_contains "$site_page" "jb tools install --profiles=development" "site page documents profile installation"
+assert_contains "$site_page" "jb tools install --profiles=development --only=bun" "site page documents narrowed profile installation"
+assert_contains "$site_page" "jb tools update" "site page documents live updates"
+assert_contains "$site_page" "jb tools update --profiles=development --only=bun" "site page documents narrowed profile updates"
+assert_contains "$site_page" "https://github.com/zarxor/scripts" "site page links to the repository"
+assert_contains "$site_page" "https://github.com/zarxor/scripts/releases" "site page links to Releases"
+assert_not_contains "$site_page" "scripts.johanbostrom.se" "site page removes the old public URL"
+assert_not_contains "$site_page" "linux/dev-server/setup.sh" "site page removes the retired installer path"
 
 for workflow_path in .github/workflows/validate.yml .github/workflows/pages.yml; do
   workflow=$(<"$workflow_path")
