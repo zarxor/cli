@@ -216,6 +216,8 @@ func TestPublishRejectsReleaseThatRemainsDraft(t *testing.T) {
 	artifactDir := t.TempDir()
 	writeExpectedArtifacts(t, artifactDir)
 	runner, request := successfulPublishRunner(t, artifactDir)
+	out := new(bytes.Buffer)
+	request.out = out
 	viewKey := commandKey(request.env.gh, "release", "view", request.version.String(), "--json", "isDraft,url,assets")
 	runner.queues[viewKey] = []fakeResponse{
 		{output: releaseJSON(true, expectedAssets)},
@@ -224,6 +226,12 @@ func TestPublishRejectsReleaseThatRemainsDraft(t *testing.T) {
 	_, err := publish(context.Background(), runner, request)
 	if err == nil || !strings.Contains(err.Error(), "still a draft") {
 		t.Fatalf("publish() error = %v", err)
+	}
+	if strings.Contains(err.Error(), "release published") || strings.Contains(out.String(), "Published release") {
+		t.Fatalf("publication was claimed before verification:\nerror: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(err.Error(), "publish command completed") {
+		t.Fatalf("completed publish request was not reported: %v", err)
 	}
 }
 

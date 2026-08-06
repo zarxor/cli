@@ -118,7 +118,7 @@ func publish(ctx context.Context, runner Runner, request publication) (string, e
 	if _, err := runner.Run(ctx, request.env.root, request.env.gh, "release", "edit", version, "--draft=false"); err != nil {
 		return "", failure(err, "gh release edit "+version+" --draft=false")
 	}
-	complete("release published", "Published release "+version)
+	complete("publish command completed", "Publish command completed; verifying public release state...")
 	published, err := readRelease(ctx, runner, request)
 	if err != nil {
 		return "", failure(err, "gh release view "+version)
@@ -132,6 +132,7 @@ func publish(ctx context.Context, runner Runner, request publication) (string, e
 	if strings.TrimSpace(published.URL) == "" {
 		return "", failure(fmt.Errorf("published release %s has no URL", version), "gh release view "+version)
 	}
+	complete("release published", "Published release "+version)
 	complete("published release verified", "Verified published release")
 	return published.URL, nil
 }
