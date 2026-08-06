@@ -57,6 +57,38 @@ func TestInstallAllowsAllToolsToBeDeselected(t *testing.T) {
 	}
 }
 
+func TestRunTreatsSelectionCancellationAsSuccessfulNoOp(t *testing.T) {
+	adapter := &fixtureAdapter{}
+	selection := &fixtureSelection{err: render.ErrCancelled}
+
+	summary := install.Run(context.Background(), install.Install, []install.ToolStatus{{Tool: mustTool(t, profile.Git), Selected: true}}, fixtureAdapters(adapter), install.Options{
+		Writer:    &bytes.Buffer{},
+		Selection: selection,
+	})
+
+	if summary.Failed || !summary.Cancelled || len(adapter.calls) != 0 {
+		t.Fatalf("Run() = %#v, adapter calls = %v; want successful cancellation", summary, adapter.calls)
+	}
+}
+
+func TestRunKeepsOrdinarySelectionErrorsAsFailures(t *testing.T) {
+	wantErr := errors.New("selection failed")
+	adapter := &fixtureAdapter{}
+	selection := &fixtureSelection{err: wantErr}
+
+	summary := install.Run(context.Background(), install.Install, []install.ToolStatus{{Tool: mustTool(t, profile.Git), Selected: true}}, fixtureAdapters(adapter), install.Options{
+		Writer:    &bytes.Buffer{},
+		Selection: selection,
+	})
+
+	if !summary.Failed || summary.Cancelled || len(adapter.calls) != 0 {
+		t.Fatalf("Run() = %#v, adapter calls = %v; want failed selection", summary, adapter.calls)
+	}
+	if len(summary.Results) != 1 || !errors.Is(summary.Results[0].Err, wantErr) {
+		t.Fatalf("results = %#v, want wrapped selection error", summary.Results)
+	}
+}
+
 func TestUpdateFiltersMissingToolsAndDefaultsInstalledToolsToSelected(t *testing.T) {
 	adapter := &fixtureAdapter{}
 	selection := &fixtureSelection{selected: []tools.ToolID{profile.Git}}

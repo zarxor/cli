@@ -77,7 +77,9 @@ func newToolsActionCommand(service ToolsService, action install.Action) *cobra.C
 			for i, name := range onlyNames {
 				only[i] = tools.ToolID(name)
 			}
+			input := command.InOrStdin()
 			writer := command.OutOrStdout()
+			theme := render.AutoTheme(input, writer, os.Environ())
 			return service.Run(command.Context(), ToolsRequest{
 				Action:       action,
 				ProfileNames: profileNames,
@@ -85,7 +87,7 @@ func newToolsActionCommand(service ToolsService, action install.Action) *cobra.C
 				Yes:          yes,
 				DryRun:       dryRun,
 				Writer:       writer,
-				Selection:    render.NewNumberedSelection(command.InOrStdin(), writer),
+				Selection:    render.NewAdaptiveSelection(input, writer, theme),
 			})
 		},
 	}

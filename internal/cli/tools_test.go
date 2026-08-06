@@ -14,6 +14,7 @@ import (
 	"github.com/zarxor/scripts/internal/detect"
 	"github.com/zarxor/scripts/internal/install"
 	"github.com/zarxor/scripts/internal/profile"
+	"github.com/zarxor/scripts/internal/render"
 	"github.com/zarxor/scripts/internal/tools"
 )
 
@@ -154,6 +155,36 @@ func TestToolsInstallWithoutScopePreselectsFullCatalog(t *testing.T) {
 		if item.Tool.ID != tools.Catalog[index].ID || !item.Selected {
 			t.Fatalf("selection item %d = %#v, want preselected %s", index, item, tools.Catalog[index].ID)
 		}
+	}
+}
+
+func TestToolsCommandConstructsAdaptiveSelection(t *testing.T) {
+	service := &recordingToolsService{}
+	err := executeRoot(t, service, "tools", "install", "--yes", "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(service.requests) != 1 {
+		t.Fatalf("service requests = %d, want one", len(service.requests))
+	}
+	if _, ok := service.requests[0].Selection.(*render.AdaptiveSelection); !ok {
+		t.Fatalf("selection = %T, want adaptive selection", service.requests[0].Selection)
+	}
+}
+
+func TestToolsServiceTreatsSelectionCancellationAsSuccess(t *testing.T) {
+	adapter := newFixtureAdapter()
+	selection := &recordingSelection{err: render.ErrCancelled}
+	err := fixtureService(adapter).Run(context.Background(), ToolsRequest{
+		Action:    install.Install,
+		Writer:    io.Discard,
+		Selection: selection,
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v, want successful cancellation", err)
+	}
+	if len(adapter.calls) != 0 {
+		t.Fatalf("adapter calls = %v, want none", adapter.calls)
 	}
 }
 

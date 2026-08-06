@@ -3,6 +3,7 @@ package install
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -48,8 +49,9 @@ type ToolResult struct {
 }
 
 type Summary struct {
-	Results []ToolResult
-	Failed  bool
+	Results   []ToolResult
+	Failed    bool
+	Cancelled bool
 }
 
 func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet map[platform.OS]adapters.Adapter, opts Options) Summary {
@@ -76,6 +78,9 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 	if !opts.Yes && opts.Selection != nil {
 		var err error
 		selectedIDs, err = opts.Selection.Select(ctx, items)
+		if errors.Is(err, render.ErrCancelled) {
+			return Summary{Cancelled: true}
+		}
 		if err != nil {
 			_, _ = fmt.Fprintf(writer, "selection failed: %v\n", err)
 			return failedPlan(eligible, action, fmt.Errorf("select tools: %w", err))
