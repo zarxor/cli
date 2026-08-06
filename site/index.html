@@ -13,7 +13,10 @@
 
     <header class="site-header">
       <div class="container header-content">
-        <a class="wordmark" href="#top" aria-label="Johan Bostrom CLI home">jb</a>
+        <div class="brand-lockup">
+          <a class="wordmark" href="#top" aria-label="Johan Bostrom CLI home">jb</a>
+          <span class="brand-name">Johan Bostrom CLI</span>
+        </div>
         <nav aria-label="Primary navigation">
           <a href="#install">Install</a>
           <a href="#commands">Commands</a>
@@ -25,12 +28,28 @@
 
     <main id="main-content">
       <section class="hero" id="top" aria-labelledby="page-title">
-        <div class="container hero-content">
-          <h1 id="page-title">Johan Bostrom CLI</h1>
-          <p class="lede">Install and update the tools your development machine needs with one small, transparent command-line tool.</p>
-          <div class="hero-actions">
-            <a class="button" href="#install">Install jb</a>
-            <a class="button button-secondary" href="https://github.com/zarxor/scripts/releases">Browse Releases</a>
+        <div class="container hero-grid">
+          <div class="hero-content">
+            <h1 id="page-title">Johan Bostrom CLI</h1>
+            <p class="lede">Install and update the tools your development machine needs with one small, transparent command-line tool.</p>
+            <div class="hero-actions">
+              <a class="button" href="#install">Install jb</a>
+              <a class="button button-secondary" href="https://github.com/zarxor/scripts/releases">Browse Releases</a>
+            </div>
+            <p class="hero-footnote"><span class="status-dot" aria-hidden="true"></span>Linux and Windows · released through GitHub</p>
+          </div>
+          <div class="terminal-panel" aria-label="Example jb workflow">
+            <div class="terminal-bar">
+              <span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="terminal-title">quick start</span>
+              <span class="terminal-status">ready</span>
+            </div>
+            <pre><code><span class="terminal-comment"># inspect a plan</span>
+<span class="terminal-prompt">$</span> jb tools install --dry-run
+
+<span class="terminal-comment"># install the catalog</span>
+<span class="terminal-prompt">$</span> jb tools install</code></pre>
+            <div class="terminal-footer"><span>preview before changes</span><span>interactive by default</span></div>
           </div>
         </div>
       </section>
@@ -43,7 +62,10 @@
           </div>
           <div class="card-grid">
             <article class="card">
-              <h3>Linux</h3>
+              <div class="card-heading">
+                <h3>Linux</h3>
+                <span class="platform-meta">Debian · Ubuntu · Arch</span>
+              </div>
               <p>For Debian/Ubuntu and Arch Linux. The default installation is user-local and does not need root access.</p>
               <p class="install-label">One-line install</p>
               <div class="code-block">
@@ -54,7 +76,10 @@
               <p class="install-note">Prefer to review first? <a href="/install.sh">Download install.sh</a>, then run <code>bash install.sh</code>.</p>
             </article>
             <article class="card">
-              <h3>Windows</h3>
+              <div class="card-heading">
+                <h3>Windows</h3>
+                <span class="platform-meta">PowerShell</span>
+              </div>
               <p>For Windows PowerShell. The default installation is in the current user's local application data.</p>
               <p class="install-label">One-line install</p>
               <div class="code-block">
@@ -68,31 +93,39 @@
         </div>
       </section>
 
-      <section class="section section-tint" id="commands" aria-labelledby="commands-title">
+      <section class="section section-dark" id="commands" aria-labelledby="commands-title">
         <div class="container">
           <div class="section-heading">
             <h2 id="commands-title">Install and update tools</h2>
             <p>Plans are shown before changes are made. Add <code>--yes</code> for automation or <code>--dry-run</code> to inspect a plan without changing your machine.</p>
           </div>
           <div class="command-grid">
-            <article class="command-card">
-              <h3>Install supported tools</h3>
-              <p>Open the interactive list with every not-yet-installed eligible tool preselected. Already installed tools are grayed out with their detected version and cannot be selected; use <code>jb tools update</code> to update them. Use ↑/↓ to move, Space to toggle, Enter to accept, or Escape/Ctrl+C to cancel safely.</p>
-              <div class="code-block">
-                <pre><code>jb tools install</code></pre>
-                <button class="copy-button" type="button" data-copy-button aria-label="Copy the supported tools install command">Copy</button>
-                <span class="copy-status" data-copy-status aria-live="polite"></span>
+            <article class="command-card command-card-featured">
+              <div class="command-card-main">
+                <div class="command-card-heading">
+                  <h3>Install supported tools</h3>
+                  <span class="command-meta">interactive</span>
+                </div>
+                <p>Open the interactive list with every not-yet-installed eligible tool preselected. Already installed tools are grayed out with their detected version and cannot be selected; use <code>jb tools update</code> to update them. Use ↑/↓ to move, Space to toggle, Enter to accept, or Escape/Ctrl+C to cancel safely.</p>
+                <div class="code-block">
+                  <pre><code>jb tools install</code></pre>
+                  <button class="copy-button" type="button" data-copy-button aria-label="Copy the supported tools install command">Copy</button>
+                  <span class="copy-status" data-copy-status aria-live="polite"></span>
+                </div>
+                <p>Redirected input uses a plain numbered fallback. Set <code>NO_COLOR</code> to disable terminal colors; symbols keep the state readable.</p>
               </div>
-              <pre><code>Available to install
+              <div class="selection-preview">
+                <div class="preview-heading"><span>Selection preview</span><span>default</span></div>
+                <pre><code>Available to install
 ❯ [✓] Git
   [✗] Docker
 
 Already installed
   [-] GitHub CLI (already installed: 2.74.2)</code></pre>
-              <p>Redirected input uses a plain numbered fallback. Set <code>NO_COLOR</code> to disable terminal colors; symbols keep the state readable.</p>
+              </div>
             </article>
             <article class="command-card">
-              <h3>Automate installation</h3>
+              <div class="command-card-heading"><h3>Automate installation</h3><span class="command-meta">automation</span></div>
               <p>Install the complete supported catalog without selection or confirmation prompts.</p>
               <div class="code-block">
                 <pre><code>jb tools install --yes</code></pre>
@@ -101,7 +134,7 @@ Already installed
               </div>
             </article>
             <article class="command-card">
-              <h3>Development profile</h3>
+              <div class="command-card-heading"><h3>Development profile</h3><span class="command-meta">profile</span></div>
               <p>Select the built-in development toolchain explicitly.</p>
               <div class="code-block">
                 <pre><code>jb tools install --profiles=development</code></pre>
@@ -110,7 +143,7 @@ Already installed
               </div>
             </article>
             <article class="command-card">
-              <h3>Choose a tool</h3>
+              <div class="command-card-heading"><h3>Choose a tool</h3><span class="command-meta">focused</span></div>
               <p>Narrow a profile while retaining the dependencies it needs.</p>
               <div class="code-block">
                 <pre><code>jb tools install --profiles=development --only=bun</code></pre>
@@ -119,7 +152,7 @@ Already installed
               </div>
             </article>
             <article class="command-card">
-              <h3>Update installed tools</h3>
+              <div class="command-card-heading"><h3>Update installed tools</h3><span class="command-meta">refresh</span></div>
               <p>Discover installed tools and their versions live, then update only what is already installed.</p>
               <div class="code-block">
                 <pre><code>jb tools update</code></pre>
@@ -128,7 +161,7 @@ Already installed
               </div>
             </article>
             <article class="command-card">
-              <h3>Update a profile selection</h3>
+              <div class="command-card-heading"><h3>Update a profile selection</h3><span class="command-meta">focused</span></div>
               <p>Narrow the profile to Bun and its required dependencies; only installed members are updated.</p>
               <div class="code-block">
                 <pre><code>jb tools update --profiles=development --only=bun</code></pre>
