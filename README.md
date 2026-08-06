@@ -152,6 +152,9 @@ Documentation and bootstrap installers are published at
 Linux arm64, Windows amd64, and Windows arm64 archives and their SHA-256 files
 are published through GitHub Releases.
 
+The `site/` directory is the user-facing Pages source; internal planning
+documents are excluded from deployment.
+
 The repository's `CNAME` declares the same hostname. Release automation remains
 deferred; builds and verification run locally without triggering GitHub Actions.
 
