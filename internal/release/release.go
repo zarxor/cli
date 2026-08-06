@@ -35,7 +35,7 @@ func Execute(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	if err := runGoValidation(ctx, opts.Runner, env, opts.Out); err != nil {
+	if err := runGoValidation(ctx, opts.Runner, env, opts.HostOS, opts.Out); err != nil {
 		return err
 	}
 
@@ -97,14 +97,18 @@ func validateOptions(opts Options) error {
 	}
 }
 
-func runGoValidation(ctx context.Context, runner Runner, env environment, out io.Writer) error {
+func runGoValidation(ctx context.Context, runner Runner, env environment, hostOS string, out io.Writer) error {
+	buildOutput := "/dev/null"
+	if hostOS == "windows" {
+		buildOutput = "NUL"
+	}
 	commands := []struct {
 		label string
 		args  []string
 	}{
 		{label: "go test", args: []string{"test", "./..."}},
 		{label: "go vet", args: []string{"vet", "./..."}},
-		{label: "go build", args: []string{"build", "./cmd/jb"}},
+		{label: "go build", args: []string{"build", "-o", buildOutput, "./cmd/jb"}},
 	}
 	for _, command := range commands {
 		fmt.Fprintf(out, "Running %s...\n", command.label)

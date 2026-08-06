@@ -27,7 +27,7 @@ func newWorkflowFixture(t *testing.T, input string) workflowFixture {
 	goExe := runner.paths["go"]
 	runner.responses[commandKey(goExe, "test", "./...")] = fakeResponse{}
 	runner.responses[commandKey(goExe, "vet", "./...")] = fakeResponse{}
-	runner.responses[commandKey(goExe, "build", "./cmd/jb")] = fakeResponse{}
+	runner.responses[commandKey(goExe, "build", "-o", "NUL", "./cmd/jb")] = fakeResponse{}
 	shell := runner.paths["pwsh"]
 	build := filepath.Join(root, "scripts", "build-local.ps1")
 	check := filepath.Join(root, "scripts", "check-artifacts.ps1")
@@ -150,6 +150,18 @@ func TestExecuteStopsAfterFailedGoValidation(t *testing.T) {
 	for _, call := range fixture.runner.calls {
 		if strings.Contains(call, "build-local") || isRemoteMutation(call) {
 			t.Fatalf("later phase ran after failed tests: %s", call)
+		}
+	}
+}
+
+func TestExecuteBuildValidationDoesNotWriteIntoRepository(t *testing.T) {
+	fixture := newWorkflowFixture(t, "1\nno\n")
+	if err := Execute(context.Background(), fixture.options); !errors.Is(err, ErrCancelled) {
+		t.Fatalf("Execute() error = %v, want ErrCancelled", err)
+	}
+	for _, call := range fixture.runner.calls {
+		if strings.Contains(call, "go\x00build\x00./cmd/jb") {
+			t.Fatalf("repository-writing build command was used: %s", call)
 		}
 	}
 }
