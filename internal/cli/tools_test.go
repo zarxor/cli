@@ -89,14 +89,71 @@ func TestToolsUpdateOnlyNarrowsLiveScan(t *testing.T) {
 	}
 }
 
-func TestToolsInstallRequiresProfilesOrOnly(t *testing.T) {
+func TestToolsInstallWithoutScopeReachesService(t *testing.T) {
 	service := &recordingToolsService{}
-	err := executeRoot(t, service, "tools", "install", "--yes")
-	if err == nil || !strings.Contains(err.Error(), "requires --profiles or --only") {
-		t.Fatalf("error = %v, want missing selection input", err)
+	err := executeRoot(t, service, "tools", "install", "--yes", "--dry-run")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(service.requests) != 0 {
-		t.Fatalf("service requests = %d, want zero", len(service.requests))
+	if len(service.requests) != 1 {
+		t.Fatalf("service requests = %d, want one", len(service.requests))
+	}
+	request := service.requests[0]
+	if len(request.ProfileNames) != 0 || len(request.Only) != 0 {
+		t.Fatalf("scope = profiles %v, only %v; want empty", request.ProfileNames, request.Only)
+	}
+}
+
+func TestToolsInstallWithoutScopePlansFullCatalog(t *testing.T) {
+	adapter := newFixtureAdapter()
+	err := executeRoot(t, fixtureService(adapter), "tools", "install", "--yes", "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := make([]tools.ToolID, len(tools.Catalog))
+	for index, tool := range tools.Catalog {
+		want[index] = tool.ID
+	}
+	if !reflect.DeepEqual(adapter.detected, want) {
+		t.Fatalf("detected tool IDs = %v, want full catalog %v", adapter.detected, want)
+	}
+	if len(adapter.calls) != 0 {
+		t.Fatalf("dry-run adapter mutations = %v, want none", adapter.calls)
+	}
+}
+
+func TestRequestedToolsReturnsDefensiveCatalogCopy(t *testing.T) {
+	planned, err := requestedTools(install.Install, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(planned, tools.Catalog) {
+		t.Fatalf("planned tools = %v, want catalog %v", planned, tools.Catalog)
+	}
+	planned[0].Name = "changed"
+	if tools.Catalog[0].Name == "changed" {
+		t.Fatal("requestedTools returned the mutable catalog slice")
+	}
+}
+
+func TestToolsInstallWithoutScopePreselectsFullCatalog(t *testing.T) {
+	adapter := newFixtureAdapter()
+	selection := &recordingSelection{}
+	err := fixtureService(adapter).Run(context.Background(), ToolsRequest{
+		Action:    install.Install,
+		Writer:    io.Discard,
+		Selection: selection,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selection.items) != len(tools.Catalog) {
+		t.Fatalf("selection items = %d, want %d", len(selection.items), len(tools.Catalog))
+	}
+	for index, item := range selection.items {
+		if item.Tool.ID != tools.Catalog[index].ID || !item.Selected {
+			t.Fatalf("selection item %d = %#v, want preselected %s", index, item, tools.Catalog[index].ID)
+		}
 	}
 }
 
@@ -181,6 +238,15 @@ func executeRoot(t *testing.T, service ToolsService, args ...string) error {
 type recordingToolsService struct {
 	requests []ToolsRequest
 	err      error
+}
+
+type recordingSelection struct {
+	items []install.Item
+}
+
+func (s *recordingSelection) Select(_ context.Context, items []install.Item) ([]tools.ToolID, error) {
+	s.items = append([]install.Item(nil), items...)
+	return nil, nil
 }
 
 func (s *recordingToolsService) Run(_ context.Context, request ToolsRequest) error {

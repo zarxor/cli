@@ -48,13 +48,13 @@ func newToolsCommand(service ToolsService) *cobra.Command {
 		Short: "Manage tools",
 	}
 	command.AddCommand(
-		newToolsActionCommand(service, install.Install, true),
-		newToolsActionCommand(service, install.Update, false),
+		newToolsActionCommand(service, install.Install),
+		newToolsActionCommand(service, install.Update),
 	)
 	return command
 }
 
-func newToolsActionCommand(service ToolsService, action install.Action, requiresSelection bool) *cobra.Command {
+func newToolsActionCommand(service ToolsService, action install.Action) *cobra.Command {
 	var profilesValue string
 	var onlyValue string
 	var yes bool
@@ -73,10 +73,6 @@ func newToolsActionCommand(service ToolsService, action install.Action, requires
 			if err != nil {
 				return err
 			}
-			if requiresSelection && len(profileNames) == 0 && len(onlyNames) == 0 {
-				return fmt.Errorf("tools install requires --profiles or --only")
-			}
-
 			only := make([]tools.ToolID, len(onlyNames))
 			for i, name := range onlyNames {
 				only[i] = tools.ToolID(name)
@@ -178,10 +174,10 @@ func (s *toolsService) Run(ctx context.Context, request ToolsRequest) error {
 }
 
 func requestedTools(action install.Action, profiles []profile.Profile, only []tools.ToolID) ([]tools.Tool, error) {
+	if len(profiles) == 0 && len(only) == 0 {
+		return append([]tools.Tool(nil), tools.Catalog...), nil
+	}
 	if action == install.Update && len(profiles) == 0 {
-		if len(only) == 0 {
-			return append([]tools.Tool(nil), tools.Catalog...), nil
-		}
 		return tools.ResolveTools(only)
 	}
 	return plan.MergeProfiles(profiles, only)
