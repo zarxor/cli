@@ -67,6 +67,9 @@ and offline tests can set `JB_RELEASE_BASE_URL` to an alternate release root;
 the selected archive and its adjacent `.sha256` file must use the same asset
 names as a GitHub release.
 
+The hosted documentation page adds a Copy button to each command block while
+keeping every command available as plain text.
+
 ## Install development tools
 
 Install from the complete supported tool catalog with:

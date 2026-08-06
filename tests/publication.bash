@@ -67,6 +67,7 @@ assert_contains "$readme" "Windows" "README documents Windows support"
 assert_contains "$readme" "macOS" "README identifies macOS as future support"
 assert_contains "$readme" "GitHub Releases" "README explains binary publication"
 assert_contains "$readme" "JB_RELEASE_BASE_URL" "README documents the release-server override"
+assert_contains "$readme" "Copy button" "README explains hosted command copy controls"
 assert_not_contains "$readme" "scripts.johanbostrom.se" "README removes the old public URL"
 assert_not_contains "$readme" "linux/dev-server/setup.sh" "README removes the retired installer path"
 
