@@ -98,7 +98,7 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 		}
 	}
 
-	selected := selectStatuses(eligible, selectedIDs)
+	selected := selectStatuses(action, eligible, selectedIDs)
 	orderedTools, err := plan.DependencyOrder(statusTools(selected))
 	if err != nil {
 		return failedPlan(selected, action, err)
@@ -224,10 +224,17 @@ func selectionItems(action Action, statuses []ToolStatus) []Item {
 	items := make([]Item, 0, len(statuses))
 	for _, status := range statuses {
 		label := status.Tool.Name
-		if action == Update {
+		disabled := action == Install && status.Installed
+		if disabled {
+			label = fmt.Sprintf("%s (already installed", status.Tool.Name)
+			if strings.TrimSpace(status.CurrentVersion) != "" {
+				label += ": " + status.CurrentVersion
+			}
+			label += ")"
+		} else if action == Update {
 			label = fmt.Sprintf("%s (%s -> %s)", status.Tool.Name, versionLabel(status.CurrentVersion), versionLabel(status.CandidateVersion))
 		}
-		items = append(items, Item{Tool: status.Tool, Label: label, Selected: true})
+		items = append(items, Item{Tool: status.Tool, Label: label, Selected: !disabled, Disabled: disabled})
 	}
 	return items
 }
@@ -256,20 +263,23 @@ func renderResult(renderer *render.Renderer, result ToolResult) error {
 func itemIDs(items []Item) []tools.ToolID {
 	ids := make([]tools.ToolID, 0, len(items))
 	for _, item := range items {
-		if item.Selected {
+		if item.Selected && !item.Disabled {
 			ids = append(ids, item.Tool.ID)
 		}
 	}
 	return ids
 }
 
-func selectStatuses(statuses []ToolStatus, ids []tools.ToolID) []ToolStatus {
+func selectStatuses(action Action, statuses []ToolStatus, ids []tools.ToolID) []ToolStatus {
 	selected := make(map[tools.ToolID]struct{}, len(ids))
 	for _, id := range ids {
 		selected[id] = struct{}{}
 	}
 	result := make([]ToolStatus, 0, len(selected))
 	for _, status := range statuses {
+		if action == Install && status.Installed {
+			continue
+		}
 		if _, ok := selected[status.Tool.ID]; ok {
 			result = append(result, status)
 		}

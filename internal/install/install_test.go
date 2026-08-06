@@ -43,6 +43,42 @@ func TestInstallHonorsInteractiveDeselection(t *testing.T) {
 	}
 }
 
+func TestInstallShowsInstalledToolsAsDisabledAndNeverExecutesThem(t *testing.T) {
+	adapter := &fixtureAdapter{}
+	selection := &fixtureSelection{selected: []tools.ToolID{profile.Git, profile.Bun}}
+	statuses := []install.ToolStatus{
+		{Tool: mustTool(t, profile.Git), Installed: true, CurrentVersion: "2.49.0", Selected: true},
+		{Tool: mustTool(t, profile.Bun), Selected: true},
+	}
+
+	summary := install.Run(context.Background(), install.Install, statuses, fixtureAdapters(adapter), install.Options{
+		Writer:    &bytes.Buffer{},
+		Selection: selection,
+	})
+
+	if summary.Failed {
+		t.Fatalf("Run() summary = %#v", summary)
+	}
+	if len(selection.items) != 2 {
+		t.Fatalf("selection items = %#v, want two", selection.items)
+	}
+	installed := selection.items[0]
+	if !installed.Disabled || installed.Selected {
+		t.Fatalf("installed item = %#v, want disabled and unselected", installed)
+	}
+	for _, want := range []string{"already installed", "2.49.0"} {
+		if !strings.Contains(installed.Label, want) {
+			t.Fatalf("installed label %q does not contain %q", installed.Label, want)
+		}
+	}
+	if selection.items[1].Disabled || !selection.items[1].Selected {
+		t.Fatalf("missing item = %#v, want enabled and selected", selection.items[1])
+	}
+	if got, want := adapter.calls, []string{"install:bun", "verify:bun"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("adapter calls = %v, want %v", got, want)
+	}
+}
+
 func TestInstallAllowsAllToolsToBeDeselected(t *testing.T) {
 	adapter := &fixtureAdapter{}
 	selection := &fixtureSelection{}
@@ -75,7 +111,7 @@ func TestRunTreatsSelectionCancellationAsSuccessfulNoOp(t *testing.T) {
 	}
 }
 
-func TestRunRendersEverySuccessfulResult(t *testing.T) {
+func TestRunRendersEveryExecutedResult(t *testing.T) {
 	adapter := &fixtureAdapter{}
 	var output bytes.Buffer
 	statuses := []install.ToolStatus{
@@ -86,10 +122,11 @@ func TestRunRendersEverySuccessfulResult(t *testing.T) {
 	if summary.Failed {
 		t.Fatalf("Run() = %#v", summary)
 	}
-	for _, want := range []string{"✓ installed Git", "✓ up-to-date Bun"} {
-		if !strings.Contains(output.String(), want) {
-			t.Fatalf("output %q does not contain %q", output.String(), want)
-		}
+	if want := "✓ installed Git"; !strings.Contains(output.String(), want) {
+		t.Fatalf("output %q does not contain %q", output.String(), want)
+	}
+	if strings.Contains(output.String(), "✓ up-to-date Bun") {
+		t.Fatalf("output %q renders installed Bun as an install result", output.String())
 	}
 }
 

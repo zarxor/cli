@@ -46,6 +46,25 @@ func TestInteractiveSelectionReturnsIDsInItemOrder(t *testing.T) {
 	}
 }
 
+func TestInteractiveSelectionCannotToggleDisabledItem(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	input := bytes.NewBufferString("\x1b[A \r")
+	selection := NewInteractiveSelection(input, &bytes.Buffer{}, NewTheme(ThemeOptions{Mode: ColorNever, Dark: true}))
+	items := []Item{
+		{Tool: tools.Tool{ID: profile.Git, Name: "Git"}, Label: "Git (already installed: 2.49.0)", Disabled: true},
+		{Tool: tools.Tool{ID: profile.Bun, Name: "Bun"}, Label: "Bun", Selected: true},
+	}
+
+	got, err := selection.Select(ctx, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []tools.ToolID{profile.Bun}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("selected IDs = %v, want %v", got, want)
+	}
+}
+
 func TestInteractiveSelectionMapsControlCToCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -116,6 +135,25 @@ func TestBoldActiveLabelStylesOnlyCursorRow(t *testing.T) {
 	}
 	if strings.Contains(lines[1], "\x1b[") || lines[1] != "  [✓] Bun" {
 		t.Fatalf("inactive row = %q, want unstyled Bun", lines[1])
+	}
+}
+
+func TestDisabledInteractiveRowIsMutedAndUsesDisabledMarker(t *testing.T) {
+	theme := NewTheme(ThemeOptions{Mode: ColorAlways, Dark: true})
+	view := "❯ [✗] Git (already installed: 2.49.0)\n  [✓] Bun"
+	labels := map[tools.ToolID]string{
+		profile.Git: "Git (already installed: 2.49.0)",
+		profile.Bun: "Bun",
+	}
+	disabled := map[tools.ToolID]bool{profile.Git: true}
+
+	got := grayDisabledRows(view, labels, disabled, theme)
+	lines := strings.Split(got, "\n")
+	if !strings.Contains(lines[0], "\x1b[") || stripANSI(lines[0]) != "❯ [-] Git (already installed: 2.49.0)" {
+		t.Fatalf("disabled row = %q, want muted disabled marker and installation info", lines[0])
+	}
+	if lines[1] != "  [✓] Bun" {
+		t.Fatalf("enabled row = %q, want unchanged", lines[1])
 	}
 }
 

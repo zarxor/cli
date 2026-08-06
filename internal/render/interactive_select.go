@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/zarxor/scripts/internal/tools"
 )
 
@@ -46,8 +47,8 @@ func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tool
 		if label == "" {
 			label = item.Tool.Name
 		}
-		options = append(options, huh.NewOption(label, item.Tool.ID).Selected(item.Selected))
-		if item.Selected {
+		options = append(options, huh.NewOption(label, item.Tool.ID).Selected(item.Selected && !item.Disabled))
+		if item.Selected && !item.Disabled {
 			selected = append(selected, item.Tool.ID)
 		}
 	}
@@ -58,14 +59,6 @@ func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tool
 		Options(options...).
 		Value(&selected).
 		Filterable(false)
-	field := &interactiveField{MultiSelect: multiSelect, labels: make(map[tools.ToolID]string, len(items))}
-	for _, item := range items {
-		field.labels[item.Tool.ID] = item.Label
-		if field.labels[item.Tool.ID] == "" {
-			field.labels[item.Tool.ID] = item.Tool.Name
-		}
-	}
-
 	keys := huh.NewDefaultKeyMap()
 	keys.Quit = key.NewBinding(
 		key.WithKeys("esc", "ctrl+c"),
@@ -75,6 +68,23 @@ func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tool
 		key.WithKeys("space"),
 		key.WithHelp("space", "toggle"),
 	)
+
+	field := &interactiveField{
+		MultiSelect: multiSelect,
+		labels:      make(map[tools.ToolID]string, len(items)),
+		disabled:    make(map[tools.ToolID]bool, len(items)),
+		toggle:      keys.MultiSelect.Toggle,
+		bulkToggle:  keys.MultiSelect.SelectAll,
+		theme:       s.theme,
+	}
+	for _, item := range items {
+		field.labels[item.Tool.ID] = item.Label
+		if field.labels[item.Tool.ID] == "" {
+			field.labels[item.Tool.ID] = item.Tool.Name
+		}
+		field.disabled[item.Tool.ID] = item.Disabled
+		field.hasDisabled = field.hasDisabled || item.Disabled
+	}
 
 	form := huh.NewForm(huh.NewGroup(field)).
 		WithInput(s.in).
@@ -99,6 +109,9 @@ func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tool
 	}
 	ordered := make([]tools.ToolID, 0, len(selectedSet))
 	for _, item := range items {
+		if item.Disabled {
+			continue
+		}
 		if _, ok := selectedSet[item.Tool.ID]; ok {
 			ordered = append(ordered, item.Tool.ID)
 		}
@@ -131,22 +144,53 @@ var _ SelectionUI = (*InteractiveSelection)(nil)
 
 type interactiveField struct {
 	*huh.MultiSelect[tools.ToolID]
-	labels map[tools.ToolID]string
+	labels      map[tools.ToolID]string
+	disabled    map[tools.ToolID]bool
+	toggle      key.Binding
+	bulkToggle  key.Binding
+	theme       Theme
+	hasDisabled bool
 }
 
 func (f *interactiveField) Update(msg tea.Msg) (huh.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+		if key.Matches(keyMsg, f.bulkToggle) && f.hasDisabled {
+			return f, nil
+		}
+		if key.Matches(keyMsg, f.toggle) {
+			if hovered, found := f.MultiSelect.Hovered(); found && f.disabled[hovered] {
+				return f, nil
+			}
+		}
+	}
 	updated, command := f.MultiSelect.Update(msg)
 	f.MultiSelect = updated.(*huh.MultiSelect[tools.ToolID])
 	return f, command
 }
 
 func (f *interactiveField) View() string {
-	view := f.MultiSelect.View()
+	view := grayDisabledRows(f.MultiSelect.View(), f.labels, f.disabled, f.theme)
 	hovered, ok := f.MultiSelect.Hovered()
-	if !ok {
+	if !ok || f.disabled[hovered] {
 		return view
 	}
 	return boldActiveLabel(view, f.labels[hovered])
+}
+
+func grayDisabledRows(view string, labels map[tools.ToolID]string, disabled map[tools.ToolID]bool, theme Theme) string {
+	lines := strings.Split(view, "\n")
+	for index, line := range lines {
+		plain := ansi.Strip(line)
+		for id, isDisabled := range disabled {
+			if !isDisabled || !strings.Contains(plain, labels[id]) {
+				continue
+			}
+			plain = strings.Replace(plain, "[✗]", "[-]", 1)
+			lines[index] = theme.Muted(plain)
+			break
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (f *interactiveField) WithTheme(theme huh.Theme) huh.Field {

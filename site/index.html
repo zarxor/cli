@@ -70,10 +70,10 @@ Get-Content .\install.ps1
           <div class="command-grid">
             <article class="command-card">
               <h3>Install supported tools</h3>
-              <p>Open the interactive list with every eligible tool preselected. Use ↑/↓ to move, Space to toggle, Enter to accept, or Escape/Ctrl+C to cancel safely.</p>
+              <p>Open the interactive list with every not-yet-installed eligible tool preselected. Already installed tools are grayed out with their detected version and cannot be selected; use <code>jb tools update</code> to update them. Use ↑/↓ to move, Space to toggle, Enter to accept, or Escape/Ctrl+C to cancel safely.</p>
               <pre><code>jb tools install</code></pre>
               <pre><code>❯ [✓] Git
-  [✓] GitHub CLI
+  [-] GitHub CLI (already installed: 2.74.2)
   [✗] Docker</code></pre>
               <p>Redirected input uses a plain numbered fallback. Set <code>NO_COLOR</code> to disable terminal colors; symbols keep the state readable.</p>
             </article>

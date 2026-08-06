@@ -27,6 +27,7 @@ type Item struct {
 	Tool     tools.Tool
 	Label    string
 	Selected bool
+	Disabled bool
 }
 
 // NumberedSelection is a terminal-independent selector. Entered numbers
@@ -48,9 +49,11 @@ func (s *NumberedSelection) Select(ctx context.Context, items []Item) ([]tools.T
 	selected := make([]bool, len(items))
 	table := tabwriter.NewWriter(s.writer, 0, 4, 2, ' ', 0)
 	for i, item := range items {
-		selected[i] = item.Selected
+		selected[i] = item.Selected && !item.Disabled
 		mark := "[ ]"
-		if item.Selected {
+		if item.Disabled {
+			mark = "[-]"
+		} else if item.Selected {
 			mark = "[x]"
 		}
 		label := item.Label
@@ -91,6 +94,9 @@ func (s *NumberedSelection) Select(ctx context.Context, items []Item) ([]tools.T
 		}
 		if _, exists := toggled[number-1]; exists {
 			continue
+		}
+		if items[number-1].Disabled {
+			return nil, fmt.Errorf("%s is already installed and cannot be selected", items[number-1].Tool.Name)
 		}
 		toggled[number-1] = struct{}{}
 		selected[number-1] = !selected[number-1]

@@ -50,6 +50,25 @@ func TestNumberedSelectionKeepsDefaultsOnEmptyInput(t *testing.T) {
 	}
 }
 
+func TestNumberedSelectionCannotToggleDisabledItem(t *testing.T) {
+	var output bytes.Buffer
+	selection := render.NewNumberedSelection(strings.NewReader("1\n"), &output)
+	items := []render.Item{
+		{Tool: tools.Tool{ID: profile.Git, Name: "Git"}, Label: "Git (already installed: 2.49.0)", Disabled: true},
+		{Tool: tools.Tool{ID: profile.Bun, Name: "Bun"}, Label: "Bun", Selected: true},
+	}
+
+	got, err := selection.Select(context.Background(), items)
+	if err == nil || !strings.Contains(err.Error(), "already installed") {
+		t.Fatalf("Select() = %v, %v; want disabled-item error", got, err)
+	}
+	for _, want := range []string{"[-]", "already installed"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("output %q does not contain %q", output.String(), want)
+		}
+	}
+}
+
 func TestNumberedSelectionRejectsClosedInput(t *testing.T) {
 	items := []render.Item{{Tool: tools.Tool{ID: profile.Git}, Selected: true}}
 	for _, input := range []string{"", "1"} {

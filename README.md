@@ -62,11 +62,13 @@ Install from the complete supported tool catalog with:
 jb tools install
 ```
 
-Every eligible tool is preselected in the interactive list:
+Every not-yet-installed eligible tool is preselected in the interactive list.
+Already installed tools remain visible, grayed out with their detected version,
+but cannot be selected by `jb tools install`:
 
 ```text
 ❯ [✓] Git
-  [✓] GitHub CLI
+  [-] GitHub CLI (already installed: 2.74.2)
   [✗] Docker
 ```
 
@@ -76,6 +78,8 @@ When input or output is redirected, `jb` uses a plain numbered selection
 instead. Colors are enabled only in a terminal and can be disabled by setting
 the `NO_COLOR` environment variable; the symbols keep every state readable
 without color.
+
+Use `jb tools update` when you want to update an already installed tool.
 
 For automation, skip the selection and confirmation prompts with:
 
