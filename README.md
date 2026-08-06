@@ -1,142 +1,207 @@
-# Johan Boström's scripts
+# Johan Bostrom CLI
 
-Reusable scripts published through GitHub Pages at
-[`scripts.johanbostrom.se`](https://scripts.johanbostrom.se).
+Johan Bostrom CLI (`jb`) installs and updates a curated development toolchain
+on Debian/Ubuntu, Arch Linux, and Windows. It is distributed as a standalone
+binary through GitHub Releases; Go is not required on the target machine.
 
-Every public script is documented here with its permanent URL, supported
-systems, effects, privileges, rerun behavior, and verification steps.
+macOS is planned for the future, but it is not supported by the initial
+release.
 
-## Linux development machine
+## Install `jb`
 
-[`linux/dev-server/setup.sh`](https://scripts.johanbostrom.se/linux/dev-server/setup.sh)
-installs or updates a development toolchain on Debian-family and Arch-family
-Linux systems.
+The bootstrap installers select the release for the current operating system
+and CPU architecture, download its SHA-256 checksum, verify the archive, and
+only then install `jb`. Review a bootstrap script before running it; do not pipe
+a downloaded script directly into a shell.
 
-It installs the latest stable versions available from supported sources:
+### Debian/Ubuntu and Arch Linux
 
-- Codex CLI
-- Git
-- GitHub CLI (`gh`)
-- Docker Engine, Buildx, and Docker Compose
-- nvm and the latest Node.js LTS
-- the latest npm
-- pnpm and Yarn through Corepack
-- Bun
-
-### Requirements
-
-- Debian, Ubuntu, a compatible Debian-family distribution, Arch Linux, or a
-  compatible Arch-family distribution
-- Bash 4.4 or newer
-- A user account with working `sudo` access, or root
-- An internet connection
-
-Running as root is supported. Root runs system operations directly, installs
-user tools into root's home directory, and skips the Docker group change because
-root already has Docker access. A non-root invocation requests `sudo` only for
-system packages, repository configuration, the Docker service, and an optional
-group change. In either mode, user tools are installed into the invoking user's
-home directory.
-
-### Run it
-
-The recommended command keeps standard input connected to the setup wizard:
+Download the Linux bootstrap from
+[`https://cli.johanbostrom.se/install.sh`](https://cli.johanbostrom.se/install.sh),
+review it, and run it:
 
 ```bash
-bash <(curl -fsSL https://scripts.johanbostrom.se/linux/dev-server/setup.sh)
+curl -fsSLO https://cli.johanbostrom.se/install.sh
+less install.sh
+bash install.sh
 ```
 
-To review the script before running it:
+The default destination is `~/.local/bin/jb`. The installer creates that
+user-local directory and does not need root. If the directory is not already on
+`PATH`, it prints the command needed for the current shell. An explicitly
+machine-wide `JB_INSTALL_DIR`, such as `/usr/local/bin`, uses `sudo` only when
+the destination is not writable.
 
-```bash
-curl -fsSLO https://scripts.johanbostrom.se/linux/dev-server/setup.sh
-less setup.sh
-bash setup.sh
+### Windows
+
+Download the PowerShell bootstrap from
+[`https://cli.johanbostrom.se/install.ps1`](https://cli.johanbostrom.se/install.ps1),
+review it, and run it:
+
+```powershell
+Invoke-WebRequest https://cli.johanbostrom.se/install.ps1 -OutFile install.ps1
+Get-Content .\install.ps1
+.\install.ps1
 ```
 
-Avoid `curl ... | bash`: the pipe consumes standard input that the optional
-wizard needs.
+The default destination is inside the current user's local application data and
+does not request elevation. Use `.\install.ps1 -Machine` for a machine-wide
+installation; only that machine-wide write requests elevation. The installer
+prints both the current-shell and persistent user `PATH` actions when needed.
 
-### First run and updates
+Both installers default to the latest assets at GitHub Releases. Maintainers
+and offline tests can set `JB_RELEASE_BASE_URL` to an alternate release root;
+the selected archive and its adjacent `.sha256` file must use the same asset
+names as a GitHub release.
 
-The script detects the distribution, installs missing tools, updates installed
-tools through their stable supported sources, verifies every tool, and then
-offers the wizard. You can safely rerun the same command later; package sources
-and shell profile blocks are replaced or reused instead of duplicated.
+## Install development tools
 
-Arch uses a full `pacman -Syu` transaction to avoid unsupported partial
-upgrades. Debian-family systems use apt and supported GitHub CLI and Docker
-repositories. A Debian derivative must declare a compatible Debian or Ubuntu
-codename that exists in Docker's repository.
+The built-in `development` profile contains the supported development
+toolchain. Preview the plan, optionally deselect tools, and confirm the install:
 
-When migrating to Docker's official packages on Debian-family systems, the
-script removes only installed packages that conflict with Docker CE (such as
-`docker.io`, `containerd`, or `runc`). Docker images, volumes, networks, and
-configuration under `/var/lib/docker` are not deleted.
-
-### Optional setup wizard
-
-The wizard asks separately whether to:
-
-1. Set or replace the global Git name and email.
-2. Authenticate GitHub CLI with `gh auth login`.
-3. Authenticate Codex with `codex login`.
-4. Add the current user to the `docker` group.
-5. Make the latest Node.js LTS the nvm default.
-
-Existing Git identity and authentication are preserved unless you explicitly
-choose to change them. Membership in the docker group grants root-level privileges.
-The script displays that warning and requires confirmation before
-changing group membership. Root runs skip this group change because Docker is
-already available. Log out and back in afterward for a non-root group change to
-take effect.
-
-### Verify the installation
-
-Open a new shell and run:
-
-```bash
-git --version
-gh --version
-docker --version
-docker compose version
-nvm --version
-node --version
-npm --version
-pnpm --version
-yarn --version
-bun --version
-codex --version
+```text
+jb tools install --profiles=development
 ```
 
-If nvm, Bun, or Codex is not found immediately, open a new shell so the updated
-`.bashrc` is loaded. If Docker still requires `sudo` after accepting its wizard
-step, log out and back in. Authentication can be completed later with
-`gh auth login` and `codex login`.
+Automation can accept the full plan with `--yes` or render it without changing
+the machine with `--dry-run`.
 
-## Publishing and custom domain
+Profiles are built into `jb` and are never written to disk. Multiple profiles
+are supplied as a comma-separated list:
 
-GitHub Pages must use **GitHub Actions** as its source. The deployment workflow
-publishes `main` only after syntax, ShellCheck, behavioral, and publication
-checks pass.
+```text
+jb tools install --profiles=<name>[,<name>...]
+```
 
-For the custom domain:
+The initial profile name is `development`; the syntax is ready for more built-in
+profiles later. Tools and dependencies shared by multiple profiles are
+deduplicated by stable tool ID before the plan is shown or executed.
 
-1. Verify `scripts.johanbostrom.se` in the owning GitHub account's Pages domain
-   settings.
-2. Create a DNS CNAME record named `scripts` pointing to `zarxor.github.io`.
-3. Wait for GitHub's DNS check, then enable HTTPS in the repository's Pages
-   settings.
+Use `--only` to narrow a profile to the tools you want to manage. Dependencies
+needed by a narrowed tool are still added automatically:
 
-The repository's `CNAME` file declares the same hostname.
+```text
+jb tools install --profiles=development --only=bun
+```
 
-## Contributing
+This plans Bun together with its required Node.js, npm, nvm, and Git
+dependencies. To start from an explicit tool list, omit `--profiles` (required
+dependencies are still added):
 
-Keep public URLs stable and scripts safe to rerun. Any change that adds,
-renames, or changes a public script must update this README in the same commit.
-Run the local checks with:
+```text
+jb tools install --only=git,bun
+```
+
+## Update installed tools
+
+```text
+jb tools update
+```
+
+For every invocation, `jb tools update` discovers installed tools and versions live,
+checks current candidate versions, and shows only tools that are already
+installed. Installed tools are selected by default before confirmation.
+No local state database is used; neither are telemetry, selection history, or a
+hidden service.
+
+Use `jb tools update --yes` for non-interactive updates or `jb tools update
+--dry-run` to inspect the plan without changing anything.
+
+Updates without `--profiles` scan the complete supported catalog. Supplying a
+profile limits discovery to that profile, while `--only` narrows the profile
+and retains dependencies:
+
+```text
+jb tools update --profiles=development
+jb tools update --profiles=development --only=bun
+```
+
+When no profile is supplied, `--only` directly limits the live scan to the
+listed tools:
+
+```text
+jb tools update --only=docker
+```
+
+## Other commands
+
+```text
+jb version
+jb completion bash
+jb completion powershell
+```
+
+## Platforms and privileges
+
+- Debian/Ubuntu uses supported apt repositories and `sudo` only for system
+  package operations when the current user is not root.
+- Arch Linux uses supported full `pacman` transactions and the same limited
+  privilege boundary.
+- Windows uses per-user package operations where possible and requests
+  elevation only for actions that actually require machine-wide access.
+- Root Linux runs privileged actions directly. User-owned tools and profile
+  edits converge in place without duplicate shell blocks.
+
+`jb` plans from live machine state on each run. Existing tools are updated in
+place, and repeated runs remain idempotent.
+
+## Publishing
+
+Documentation and bootstrap installers are published at
+[`cli.johanbostrom.se`](https://cli.johanbostrom.se). Versioned Linux amd64,
+Linux arm64, Windows amd64, and Windows arm64 archives and their SHA-256 files
+are published through GitHub Releases.
+
+The `site/` directory is the user-facing Pages source; internal planning
+documents are excluded from deployment.
+
+The repository's `CNAME` declares the same hostname. Release automation remains
+deferred; builds and verification run locally without triggering GitHub Actions.
+
+### Prepare a local release
+
+The local build scripts create the published release matrix outside the
+repository by default, in the system temporary directory. The PowerShell script
+uses the verified Go executable at `.tools/go1.26.5/go/bin/go.exe`; the Bash
+script discovers the native `go` executable (or accepts `--go`/`JB_GO_EXE`).
+Both compile with `-trimpath` and inject the requested version (or `dev` when
+omitted):
+
+```powershell
+pwsh -NoProfile -File scripts/build-local.ps1 -Version v1.2.3
+pwsh -NoProfile -File scripts/check-artifacts.ps1 -Version v1.2.3
+```
 
 ```bash
-bash tests/run.bash
-shellcheck --severity=warning linux/dev-server/setup.sh tests/*.bash
+bash scripts/build-local.sh --version v1.2.3
+bash scripts/check-artifacts.sh --version v1.2.3
+```
+
+Use `-OutputDir`/`--output-dir` to supply another output directory, and pass
+that same directory to `-ArtifactDir`/`--artifact-dir` for the checker. The
+release assets are:
+
+- `jb_linux_amd64.tar.gz` and `jb_linux_arm64.tar.gz`, each containing only `jb`
+- `jb_windows_amd64.zip` and `jb_windows_arm64.zip`, each containing only `jb.exe`
+- a matching `<asset>.sha256` file beside every archive
+
+The checker validates every archive's expected member and SHA-256 checksum. It
+also unpacks and runs `jb version` for the archive matching the current host's
+operating system and CPU architecture; run it on each native platform to cover
+both operating systems and architectures.
+
+## Development
+
+Use the repository's verified Go toolchain and run:
+
+```bash
+go test ./...
+bash tests/cli-smoke.sh
+bash tests/publication.bash
+```
+
+On Windows, also run:
+
+```powershell
+pwsh -NoProfile -File tests/cli-smoke.ps1
 ```
