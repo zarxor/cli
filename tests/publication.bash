@@ -95,4 +95,13 @@ for workflow_path in .github/workflows/validate.yml .github/workflows/pages.yml;
   assert_not_contains "$workflow" "linux/dev-server/setup.sh" "$workflow_name removes the retired installer path"
 done
 
+pages_workflow=$(<.github/workflows/pages.yml)
+assert_contains "$pages_workflow" "- name: Assemble Pages site" "Pages workflow assembles a dedicated site artifact"
+assert_contains "$pages_workflow" "rm -rf _site" "Pages workflow clears the dedicated site artifact"
+assert_contains "$pages_workflow" "mkdir -p _site" "Pages workflow creates the dedicated site artifact"
+assert_contains "$pages_workflow" "cp -R site/. _site/" "Pages workflow copies the published site files"
+assert_contains "$pages_workflow" "cp install.sh install.ps1 CNAME _site/" "Pages workflow copies published installers and CNAME"
+assert_contains "$pages_workflow" "path: _site" "Pages workflow uploads the dedicated site artifact"
+assert_not_contains "$pages_workflow" "path: ." "Pages workflow does not upload the repository root"
+
 finish_tests
