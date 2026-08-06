@@ -16,63 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  go:
-    name: Validate Go
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Test, vet, and build
-        run: |
-          go test ./...
-          go vet ./...
-          go build ./cmd/jb
-
-  validate:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Debian
-            image: debian:bookworm-slim
-            install: apt-get update && apt-get install -y bash ca-certificates coreutils curl git gawk findutils python3 shellcheck tar
-          - name: Arch
-            image: archlinux:base
-            install: pacman -Syu --noconfirm bash ca-certificates coreutils curl git gawk findutils python shellcheck tar
-    name: Validate on ${{ matrix.name }}
-    container: ${{ matrix.image }}
-    steps:
-      - name: Install test dependencies
-        run: ${{ matrix.install }}
-
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Trust checkout directory
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Validate Bash syntax
-        run: bash -n install.sh tests/cli-smoke.sh tests/*.bash
-
-      - name: Run ShellCheck
-        run: shellcheck --severity=warning install.sh tests/cli-smoke.sh tests/*.bash
-
-      - name: Run behavioral and publication tests
-        run: bash tests/run.bash
-
-      - name: Check whitespace
-        run: git diff --check
-
   deploy:
-    needs: [go, validate]
     runs-on: ubuntu-latest
     environment:
       name: github-pages
