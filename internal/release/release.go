@@ -68,6 +68,7 @@ func Execute(ctx context.Context, opts Options) error {
 		env:         env,
 		version:     version,
 		artifactDir: artifactDir,
+		out:         opts.Out,
 	})
 	if err != nil {
 		return err

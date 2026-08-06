@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ type publication struct {
 	env         environment
 	version     Version
 	artifactDir string
+	out         io.Writer
 }
 
 type releaseState struct {
@@ -27,10 +29,21 @@ type publishError struct {
 	cause       error
 	artifactDir string
 	recovery    string
+	completed   []string
 }
 
 func (e *publishError) Error() string {
-	return fmt.Sprintf("%v\nArtifacts preserved at: %s\nRecovery: %s", e.cause, e.artifactDir, e.recovery)
+	completed := "none"
+	if len(e.completed) > 0 {
+		completed = strings.Join(e.completed, ", ")
+	}
+	return fmt.Sprintf(
+		"%v\nCompleted steps: %s\nArtifacts preserved at: %s\nRecovery: %s",
+		e.cause,
+		completed,
+		e.artifactDir,
+		e.recovery,
+	)
 }
 
 func (e *publishError) Unwrap() error {
@@ -38,6 +51,18 @@ func (e *publishError) Unwrap() error {
 }
 
 func publish(ctx context.Context, runner Runner, request publication) (string, error) {
+	out := request.out
+	if out == nil {
+		out = io.Discard
+	}
+	var completed []string
+	complete := func(state, message string) {
+		completed = append(completed, state)
+		fmt.Fprintln(out, message)
+	}
+	failure := func(cause error, recovery string) error {
+		return publicationFailure(request, cause, recovery, completed)
+	}
 	assets, err := ValidateArtifactSet(request.artifactDir)
 	if err != nil {
 		return "", err
@@ -50,11 +75,13 @@ func publish(ctx context.Context, runner Runner, request publication) (string, e
 		request.env.git,
 		"tag", "-a", version, request.env.head, "-m", "Release "+version,
 	); err != nil {
-		return "", publicationFailure(request, err, "rerun go run ./cmd/release after resolving the local tag error")
+		return "", failure(err, "rerun go run ./cmd/release after resolving the local tag error")
 	}
+	complete("local tag "+version, "Created local tag "+version)
 	if _, err := runner.Run(ctx, request.env.root, request.env.git, "push", "origin", tagRef); err != nil {
-		return "", publicationFailure(request, err, "git push origin "+tagRef)
+		return "", failure(err, "git push origin "+tagRef)
 	}
+	complete("tag pushed to origin", "Pushed tag "+version+" to origin")
 
 	createArgs := []string{
 		"release", "create", version,
@@ -64,15 +91,16 @@ func publish(ctx context.Context, runner Runner, request publication) (string, e
 		createArgs = append(createArgs, filepath.Join(request.artifactDir, name))
 	}
 	if _, err := runner.Run(ctx, request.env.root, request.env.gh, createArgs...); err != nil {
-		return "", publicationFailure(request, err, "gh release view "+version)
+		return "", failure(err, "gh release view "+version)
 	}
+	complete("draft release created with assets", fmt.Sprintf("Created draft release and uploaded %d assets", len(assets)))
 
 	draft, err := readRelease(ctx, runner, request)
 	if err != nil {
-		return "", publicationFailure(request, err, "gh release view "+version)
+		return "", failure(err, "gh release view "+version)
 	}
 	if !draft.IsDraft {
-		return "", publicationFailure(request, fmt.Errorf("release %s was published before asset verification", version), "gh release view "+version)
+		return "", failure(fmt.Errorf("release %s was published before asset verification", version), "gh release view "+version)
 	}
 	if err := validateReleaseAssets(draft, assets); err != nil {
 		recovery := "gh release view " + version
@@ -83,33 +111,37 @@ func publish(ctx context.Context, runner Runner, request publication) (string, e
 			}
 			recovery = "gh release upload " + version + " " + strings.Join(paths, " ")
 		}
-		return "", publicationFailure(request, err, recovery)
+		return "", failure(err, recovery)
 	}
+	complete("draft assets verified", "Verified draft release assets")
 
 	if _, err := runner.Run(ctx, request.env.root, request.env.gh, "release", "edit", version, "--draft=false"); err != nil {
-		return "", publicationFailure(request, err, "gh release edit "+version+" --draft=false")
+		return "", failure(err, "gh release edit "+version+" --draft=false")
 	}
+	complete("release published", "Published release "+version)
 	published, err := readRelease(ctx, runner, request)
 	if err != nil {
-		return "", publicationFailure(request, err, "gh release view "+version)
+		return "", failure(err, "gh release view "+version)
 	}
 	if published.IsDraft {
-		return "", publicationFailure(request, fmt.Errorf("release %s is still a draft", version), "gh release edit "+version+" --draft=false")
+		return "", failure(fmt.Errorf("release %s is still a draft", version), "gh release edit "+version+" --draft=false")
 	}
 	if err := validateReleaseAssets(published, assets); err != nil {
-		return "", publicationFailure(request, err, "gh release view "+version)
+		return "", failure(err, "gh release view "+version)
 	}
 	if strings.TrimSpace(published.URL) == "" {
-		return "", publicationFailure(request, fmt.Errorf("published release %s has no URL", version), "gh release view "+version)
+		return "", failure(fmt.Errorf("published release %s has no URL", version), "gh release view "+version)
 	}
+	complete("published release verified", "Verified published release")
 	return published.URL, nil
 }
 
-func publicationFailure(request publication, cause error, recovery string) error {
+func publicationFailure(request publication, cause error, recovery string, completed []string) error {
 	return &publishError{
 		cause:       cause,
 		artifactDir: request.artifactDir,
 		recovery:    recovery,
+		completed:   slices.Clone(completed),
 	}
 }
 

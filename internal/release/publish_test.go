@@ -1,6 +1,7 @@
 package release
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -81,6 +82,41 @@ func TestPublishTagsUploadsVerifiesAndPublishes(t *testing.T) {
 	}
 	if position != len(wantOrder) {
 		t.Fatalf("calls did not contain expected order at item %d:\n%v", position, runner.calls)
+	}
+}
+
+func TestPublishReportsEachCompletedExternalStep(t *testing.T) {
+	artifactDir := t.TempDir()
+	writeExpectedArtifacts(t, artifactDir)
+	runner, request := successfulPublishRunner(t, artifactDir)
+	out := new(bytes.Buffer)
+	request.out = out
+	if _, err := publish(context.Background(), runner, request); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{
+		"Created local tag v1.0.0",
+		"Pushed tag v1.0.0 to origin",
+		"Created draft release and uploaded 8 assets",
+		"Verified draft release assets",
+		"Published release v1.0.0",
+		"Verified published release",
+	} {
+		if !strings.Contains(out.String(), text) {
+			t.Errorf("publication output missing %q:\n%s", text, out)
+		}
+	}
+}
+
+func TestPublishErrorReportsCompletedSteps(t *testing.T) {
+	artifactDir := t.TempDir()
+	writeExpectedArtifacts(t, artifactDir)
+	runner, request := successfulPublishRunner(t, artifactDir)
+	pushKey := commandKey(request.env.git, "push", "origin", "refs/tags/"+request.version.String())
+	runner.responses[pushKey] = fakeResponse{err: errors.New("push failed")}
+	_, err := publish(context.Background(), runner, request)
+	if err == nil || !strings.Contains(err.Error(), "Completed steps: local tag v1.0.0") {
+		t.Fatalf("publish() error = %v", err)
 	}
 }
 
