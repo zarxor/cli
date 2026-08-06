@@ -185,8 +185,12 @@ Documentation and bootstrap installers are published at
 Linux arm64, Windows amd64, and Windows arm64 archives and their SHA-256 files
 are published through GitHub Releases.
 
-The `site/` directory is the user-facing Pages source; internal planning
-documents are excluded from deployment.
+The `site/` directory contains the user-facing Pages source. The Pages workflow
+copies its contents into the root of the uploaded artifact (`index.html`,
+`styles.css`, installers, and `CNAME`); internal planning documents are
+excluded from deployment. In repository settings, Pages must use **GitHub
+Actions** as its source. Branch publishing only supports the repository root
+or `/docs`, not `/site`.
 
 The repository's `CNAME` declares the same hostname. Releases are prepared and
 published locally without depending on GitHub Actions.

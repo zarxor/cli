@@ -90,6 +90,9 @@ jobs:
           mkdir -p _site
           cp -R site/. _site/
           cp install.sh install.ps1 CNAME _site/
+          test -f _site/index.html
+          test -f _site/styles.css
+          test ! -e _site/site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
