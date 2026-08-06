@@ -19,7 +19,7 @@ wrap_command() {
 }
 
 make_fake_bin() {
-  rm -rf "$test_root/bin"
+  rm -rf "${test_root:?}/bin"
   mkdir -p "$test_root/bin"
   for name in dirname mkdir mktemp rm touch; do
     wrap_command "$name"
@@ -97,6 +97,9 @@ tool_log="$test_root/check-tools.log"
 check_output=$(PATH="$test_root/bin" JB_TEST_TOOL_LOG="$tool_log" "$real_bash" \
   "$REPO_ROOT/scripts/check-artifacts.sh" --version v1.2.3 --artifact-dir "$check_dir" 2>&1)
 check_status=$?
+if ((check_status != 0)); then
+  printf 'check output: %s\n' "$check_output" >&2
+fi
 assert_eq 0 "$check_status" "Bash artifact checker supports shasum on macOS"
 if [[ -f $tool_log ]]; then
   check_log=$(<"$tool_log")
