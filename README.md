@@ -56,15 +56,28 @@ names as a GitHub release.
 
 ## Install development tools
 
+Install from the complete supported tool catalog with:
+
+```text
+jb tools install
+```
+
+Every eligible tool is preselected in the interactive list. Deselect anything
+you do not want, or press Enter to accept the full plan. For automation, skip
+the selection and confirmation prompts with:
+
+```text
+jb tools install --yes
+```
+
+Add `--dry-run` to either form to render the plan without changing the machine.
+
 The built-in `development` profile contains the supported development
-toolchain. Preview the plan, optionally deselect tools, and confirm the install:
+toolchain and can still be selected explicitly:
 
 ```text
 jb tools install --profiles=development
 ```
-
-Automation can accept the full plan with `--yes` or render it without changing
-the machine with `--dry-run`.
 
 Profiles are built into `jb` and are never written to disk. Multiple profiles
 are supplied as a comma-separated list:

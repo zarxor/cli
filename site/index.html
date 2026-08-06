@@ -69,8 +69,18 @@ Get-Content .\install.ps1
           </div>
           <div class="command-grid">
             <article class="command-card">
+              <h3>Install supported tools</h3>
+              <p>Open the interactive list with every eligible tool preselected. Press Enter to accept the full plan.</p>
+              <pre><code>jb tools install</code></pre>
+            </article>
+            <article class="command-card">
+              <h3>Automate installation</h3>
+              <p>Install the complete supported catalog without selection or confirmation prompts.</p>
+              <pre><code>jb tools install --yes</code></pre>
+            </article>
+            <article class="command-card">
               <h3>Development profile</h3>
-              <p>Install the supported development toolchain.</p>
+              <p>Select the built-in development toolchain explicitly.</p>
               <pre><code>jb tools install --profiles=development</code></pre>
             </article>
             <article class="command-card">
