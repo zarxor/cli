@@ -79,6 +79,7 @@ assert_contains "$site_page" "jb tools install --profiles=development" "site pag
 assert_contains "$site_page" "jb tools install --profiles=development --only=bun" "site page documents narrowed profile installation"
 assert_contains "$site_page" "jb tools update" "site page documents live updates"
 assert_contains "$site_page" "jb tools update --profiles=development --only=bun" "site page documents narrowed profile updates"
+assert_contains "$site_page" "Narrow the profile to Bun and its required dependencies; only installed members are updated." "site page retains dependencies for narrowed profile updates"
 assert_contains "$site_page" "https://github.com/zarxor/scripts" "site page links to the repository"
 assert_contains "$site_page" "https://github.com/zarxor/scripts/releases" "site page links to Releases"
 assert_not_contains "$site_page" "scripts.johanbostrom.se" "site page removes the old public URL"

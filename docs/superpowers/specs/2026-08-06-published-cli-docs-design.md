@@ -44,4 +44,3 @@ Publication tests will verify that:
 - the Pages workflow publishes `_site` and copies the maintained installers;
 - the site has no references to the retired installer URL;
 - existing Bash, Go, installer, and artifact checks remain green.
-
