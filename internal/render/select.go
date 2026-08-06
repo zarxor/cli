@@ -4,6 +4,7 @@ package render
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -11,6 +12,11 @@ import (
 	"text/tabwriter"
 
 	"github.com/zarxor/scripts/internal/tools"
+)
+
+var (
+	ErrCancelled              = errors.New("selection cancelled")
+	ErrInteractiveUnavailable = errors.New("interactive selection unavailable")
 )
 
 type SelectionUI interface {
