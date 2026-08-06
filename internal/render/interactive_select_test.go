@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/huh/v2"
 	"github.com/zarxor/scripts/internal/profile"
 	"github.com/zarxor/scripts/internal/tools"
 )
@@ -70,6 +71,38 @@ func TestInteractiveSelectionMapsEscapeToCancellation(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatalf("selected IDs = %v, want nil", got)
+	}
+}
+
+func TestInteractiveSelectionClassifiesRecoverableTerminalStartupFailure(t *testing.T) {
+	wantErr := errors.New("raw mode unavailable")
+	selection := newInteractiveSelection(
+		bytes.NewBuffer(nil),
+		&bytes.Buffer{},
+		NewTheme(ThemeOptions{Mode: ColorNever}),
+		func(context.Context, *huh.Form) error {
+			return errors.New("huh: error making terminal raw: " + wantErr.Error())
+		},
+	)
+
+	_, err := selection.Select(context.Background(), selectionFixtureItems())
+	if !errors.Is(err, ErrInteractiveUnavailable) {
+		t.Fatalf("Select() error = %v, want interactive-unavailable", err)
+	}
+}
+
+func TestInteractiveSelectionPreservesOrdinaryFormFailure(t *testing.T) {
+	wantErr := errors.New("output failed")
+	selection := newInteractiveSelection(
+		bytes.NewBuffer(nil),
+		&bytes.Buffer{},
+		NewTheme(ThemeOptions{Mode: ColorNever}),
+		func(context.Context, *huh.Form) error { return wantErr },
+	)
+
+	_, err := selection.Select(context.Background(), selectionFixtureItems())
+	if !errors.Is(err, wantErr) || errors.Is(err, ErrInteractiveUnavailable) {
+		t.Fatalf("Select() error = %v, want ordinary form failure", err)
 	}
 }
 

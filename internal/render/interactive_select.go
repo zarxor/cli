@@ -15,13 +15,20 @@ import (
 )
 
 type InteractiveSelection struct {
-	in    io.Reader
-	out   io.Writer
-	theme Theme
+	in      io.Reader
+	out     io.Writer
+	theme   Theme
+	runForm func(context.Context, *huh.Form) error
 }
 
 func NewInteractiveSelection(in io.Reader, out io.Writer, theme Theme) SelectionUI {
-	return &InteractiveSelection{in: in, out: out, theme: theme}
+	return newInteractiveSelection(in, out, theme, func(ctx context.Context, form *huh.Form) error {
+		return form.RunWithContext(ctx)
+	})
+}
+
+func newInteractiveSelection(in io.Reader, out io.Writer, theme Theme, runForm func(context.Context, *huh.Form) error) *InteractiveSelection {
+	return &InteractiveSelection{in: in, out: out, theme: theme, runForm: runForm}
 }
 
 func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tools.ToolID, error) {
@@ -69,15 +76,18 @@ func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tool
 		key.WithHelp("space", "toggle"),
 	)
 
-	err := huh.NewForm(huh.NewGroup(field)).
+	form := huh.NewForm(huh.NewGroup(field)).
 		WithInput(s.in).
 		WithOutput(s.out).
 		WithTheme(s.theme.HuhTheme()).
 		WithKeyMap(keys).
-		WithShowHelp(false).
-		RunWithContext(ctx)
+		WithShowHelp(false)
+	err := s.runForm(ctx, form)
 	if errors.Is(err, huh.ErrUserAborted) {
 		return nil, ErrCancelled
+	}
+	if interactiveStartupUnavailable(err) {
+		return nil, fmt.Errorf("%w: %w", ErrInteractiveUnavailable, err)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("interactive selection: %w", err)
@@ -94,6 +104,27 @@ func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tool
 		}
 	}
 	return ordered, nil
+}
+
+func interactiveStartupUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, fragment := range []string{
+		"error entering raw mode",
+		"error making terminal raw",
+		"error getting console mode",
+		"error setting console mode",
+		"error getting terminal state",
+		"could not create cancelable reader",
+		"could not open tty",
+	} {
+		if strings.Contains(message, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 var _ SelectionUI = (*InteractiveSelection)(nil)
