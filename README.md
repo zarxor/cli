@@ -155,10 +155,43 @@ are published through GitHub Releases.
 The `site/` directory is the user-facing Pages source; internal planning
 documents are excluded from deployment.
 
-The repository's `CNAME` declares the same hostname. Release automation remains
-deferred; builds and verification run locally without triggering GitHub Actions.
+The repository's `CNAME` declares the same hostname. Releases are prepared and
+published locally without depending on GitHub Actions.
 
-### Prepare a local release
+### Publish a release
+
+Run the interactive release command from a clean `main` branch that is
+synchronized with `origin/main`:
+
+```text
+go run ./cmd/release
+```
+
+The command requires Git, Go, the authenticated GitHub CLI (`gh`), and
+PowerShell on Windows or Bash on Linux and macOS. It fetches the current tags,
+shows patch, minor, major, custom-version, and cancel choices, then runs the Go
+tests, vetting, build, artifact generation, and artifact verification.
+
+After the checks pass, the command shows the selected version, exact commit,
+and all eight assets. Nothing is changed remotely until the final confirmation.
+Once confirmed, it creates and pushes the annotated version tag, creates a
+temporary draft with GitHub-generated release notes, uploads and verifies every
+asset, and immediately publishes the release. Successful runs print the public
+release URL.
+
+If a remote operation fails, the command preserves the generated artifacts and
+any tag or draft that already exists. It prints the artifact directory and a
+recovery command; it never deletes or overwrites remote release state
+automatically.
+
+On macOS, install GNU tar before releasing so deterministic archives can be
+created:
+
+```text
+brew install gnu-tar
+```
+
+### Prepare artifacts manually
 
 The local build scripts create the published release matrix outside the
 repository by default, in the system temporary directory. The PowerShell script
