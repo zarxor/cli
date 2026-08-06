@@ -67,9 +67,12 @@ Already installed tools remain visible, grayed out with their detected version,
 but cannot be selected by `jb tools install`:
 
 ```text
+Available to install
 ❯ [✓] Git
-  [-] GitHub CLI (already installed: 2.74.2)
   [✗] Docker
+
+Already installed
+  [-] GitHub CLI (already installed: 2.74.2)
 ```
 
 Use ↑/↓ to move, Space to toggle `[✓]` selected and `[✗]` deselected tools,

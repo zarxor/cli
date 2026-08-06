@@ -50,7 +50,7 @@ func TestNumberedSelectionKeepsDefaultsOnEmptyInput(t *testing.T) {
 	}
 }
 
-func TestNumberedSelectionCannotToggleDisabledItem(t *testing.T) {
+func TestNumberedSelectionGroupsAvailableAndInstalledItems(t *testing.T) {
 	var output bytes.Buffer
 	selection := render.NewNumberedSelection(strings.NewReader("1\n"), &output)
 	items := []render.Item{
@@ -59,12 +59,21 @@ func TestNumberedSelectionCannotToggleDisabledItem(t *testing.T) {
 	}
 
 	got, err := selection.Select(context.Background(), items)
-	if err == nil || !strings.Contains(err.Error(), "already installed") {
-		t.Fatalf("Select() = %v, %v; want disabled-item error", got, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, want := range []string{"[-]", "already installed"} {
+	if len(got) != 0 {
+		t.Fatalf("Select() = %v, want no selected tools after toggling available Bun", got)
+	}
+	for _, want := range []string{"Available to install", "1", "Bun", "Already installed", "[-]", "Git (already installed: 2.49.0)"} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("output %q does not contain %q", output.String(), want)
+		}
+	}
+	for _, line := range strings.Split(output.String(), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(line, "Git (already installed") && len(trimmed) > 0 && trimmed[0] >= '0' && trimmed[0] <= '9' {
+			t.Fatalf("installed tool was assigned a selectable number: %q", line)
 		}
 	}
 }

@@ -170,11 +170,43 @@ func (f *interactiveField) Update(msg tea.Msg) (huh.Model, tea.Cmd) {
 
 func (f *interactiveField) View() string {
 	view := grayDisabledRows(f.MultiSelect.View(), f.labels, f.disabled, f.theme)
+	view = groupSelectionRows(view, f.labels, f.disabled, f.theme)
 	hovered, ok := f.MultiSelect.Hovered()
 	if !ok || f.disabled[hovered] {
 		return view
 	}
 	return boldActiveLabel(view, f.labels[hovered])
+}
+
+func groupSelectionRows(view string, labels map[tools.ToolID]string, disabled map[tools.ToolID]bool, theme Theme) string {
+	lines := strings.Split(view, "\n")
+	grouped := make([]string, 0, len(lines)+3)
+	availableHeading := false
+	installedHeading := false
+	for _, line := range lines {
+		isRow, isDisabled := selectionRow(ansi.Strip(line), labels, disabled)
+		if isRow && isDisabled && !installedHeading {
+			if len(grouped) > 0 {
+				grouped = append(grouped, "")
+			}
+			grouped = append(grouped, theme.Muted("Already installed"))
+			installedHeading = true
+		} else if isRow && !isDisabled && !availableHeading {
+			grouped = append(grouped, theme.Accent("Available to install"))
+			availableHeading = true
+		}
+		grouped = append(grouped, line)
+	}
+	return strings.Join(grouped, "\n")
+}
+
+func selectionRow(line string, labels map[tools.ToolID]string, disabled map[tools.ToolID]bool) (bool, bool) {
+	for id, label := range labels {
+		if strings.Contains(line, label) {
+			return true, disabled[id]
+		}
+	}
+	return false, false
 }
 
 func grayDisabledRows(view string, labels map[tools.ToolID]string, disabled map[tools.ToolID]bool, theme Theme) string {

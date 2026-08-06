@@ -47,25 +47,55 @@ func (s *NumberedSelection) Select(ctx context.Context, items []Item) ([]tools.T
 	}
 
 	selected := make([]bool, len(items))
-	table := tabwriter.NewWriter(s.writer, 0, 4, 2, ' ', 0)
+	available := make([]int, 0, len(items))
+	installed := make([]int, 0, len(items))
 	for i, item := range items {
 		selected[i] = item.Selected && !item.Disabled
-		mark := "[ ]"
 		if item.Disabled {
-			mark = "[-]"
-		} else if item.Selected {
+			installed = append(installed, i)
+		} else {
+			available = append(available, i)
+		}
+	}
+
+	table := tabwriter.NewWriter(s.writer, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(table, "Available to install"); err != nil {
+		return nil, err
+	}
+	for number, itemIndex := range available {
+		item := items[itemIndex]
+		mark := "[ ]"
+		if item.Selected {
 			mark = "[x]"
 		}
 		label := item.Label
 		if label == "" {
 			label = item.Tool.Name
 		}
-		if _, err := fmt.Fprintf(table, "%d\t%s\t%s\n", i+1, mark, label); err != nil {
+		if _, err := fmt.Fprintf(table, "%d\t%s\t%s\n", number+1, mark, label); err != nil {
 			return nil, err
+		}
+	}
+	if len(installed) > 0 {
+		if _, err := fmt.Fprintln(table, "\nAlready installed"); err != nil {
+			return nil, err
+		}
+		for _, itemIndex := range installed {
+			item := items[itemIndex]
+			label := item.Label
+			if label == "" {
+				label = item.Tool.Name
+			}
+			if _, err := fmt.Fprintf(table, "\t[-]\t%s\n", label); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := table.Flush(); err != nil {
 		return nil, err
+	}
+	if len(available) == 0 {
+		return nil, nil
 	}
 	if _, err := fmt.Fprint(s.writer, "Toggle numbers (comma-separated), or press Enter to accept defaults: "); err != nil {
 		return nil, err
@@ -89,17 +119,15 @@ func (s *NumberedSelection) Select(ctx context.Context, items []Item) ([]tools.T
 	}
 	for _, value := range values {
 		number, parseErr := strconv.Atoi(value)
-		if parseErr != nil || number < 1 || number > len(items) {
-			return nil, fmt.Errorf("invalid selection %q: enter numbers from 1 to %d", value, len(items))
+		if parseErr != nil || number < 1 || number > len(available) {
+			return nil, fmt.Errorf("invalid selection %q: enter numbers from 1 to %d", value, len(available))
 		}
-		if _, exists := toggled[number-1]; exists {
+		itemIndex := available[number-1]
+		if _, exists := toggled[itemIndex]; exists {
 			continue
 		}
-		if items[number-1].Disabled {
-			return nil, fmt.Errorf("%s is already installed and cannot be selected", items[number-1].Tool.Name)
-		}
-		toggled[number-1] = struct{}{}
-		selected[number-1] = !selected[number-1]
+		toggled[itemIndex] = struct{}{}
+		selected[itemIndex] = !selected[itemIndex]
 	}
 
 	ids := make([]tools.ToolID, 0, len(items))

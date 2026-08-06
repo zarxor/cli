@@ -49,11 +49,11 @@ func TestInteractiveSelectionReturnsIDsInItemOrder(t *testing.T) {
 func TestInteractiveSelectionCannotToggleDisabledItem(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	input := bytes.NewBufferString("\x1b[A \r")
+	input := bytes.NewBufferString("\x1b[B \r")
 	selection := NewInteractiveSelection(input, &bytes.Buffer{}, NewTheme(ThemeOptions{Mode: ColorNever, Dark: true}))
 	items := []Item{
-		{Tool: tools.Tool{ID: profile.Git, Name: "Git"}, Label: "Git (already installed: 2.49.0)", Disabled: true},
 		{Tool: tools.Tool{ID: profile.Bun, Name: "Bun"}, Label: "Bun", Selected: true},
+		{Tool: tools.Tool{ID: profile.Git, Name: "Git"}, Label: "Git (already installed: 2.49.0)", Disabled: true},
 	}
 
 	got, err := selection.Select(ctx, items)
@@ -154,6 +154,25 @@ func TestDisabledInteractiveRowIsMutedAndUsesDisabledMarker(t *testing.T) {
 	}
 	if lines[1] != "  [✓] Bun" {
 		t.Fatalf("enabled row = %q, want unchanged", lines[1])
+	}
+}
+
+func TestInteractiveRowsGroupAvailableBeforeInstalled(t *testing.T) {
+	theme := NewTheme(ThemeOptions{Mode: ColorAlways, Dark: true})
+	view := "❯ [✓] Bun\n  [-] Git (already installed: 2.49.0)"
+	labels := map[tools.ToolID]string{
+		profile.Bun: "Bun",
+		profile.Git: "Git (already installed: 2.49.0)",
+	}
+	disabled := map[tools.ToolID]bool{profile.Git: true}
+
+	got := groupSelectionRows(view, labels, disabled, theme)
+	want := "Available to install\n❯ [✓] Bun\n\nAlready installed\n  [-] Git (already installed: 2.49.0)"
+	if plain := stripANSI(got); plain != want {
+		t.Fatalf("grouped rows = %q, want %q", plain, want)
+	}
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("group headings are not styled: %q", got)
 	}
 }
 

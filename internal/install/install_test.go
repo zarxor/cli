@@ -62,7 +62,14 @@ func TestInstallShowsInstalledToolsAsDisabledAndNeverExecutesThem(t *testing.T) 
 	if len(selection.items) != 2 {
 		t.Fatalf("selection items = %#v, want two", selection.items)
 	}
-	installed := selection.items[0]
+	available := selection.items[0]
+	if available.Tool.ID != profile.Bun || available.Disabled || !available.Selected {
+		t.Fatalf("first item = %#v, want available Bun", available)
+	}
+	installed := selection.items[1]
+	if installed.Tool.ID != profile.Git {
+		t.Fatalf("second item = %#v, want installed Git", installed)
+	}
 	if !installed.Disabled || installed.Selected {
 		t.Fatalf("installed item = %#v, want disabled and unselected", installed)
 	}
@@ -70,9 +77,6 @@ func TestInstallShowsInstalledToolsAsDisabledAndNeverExecutesThem(t *testing.T) 
 		if !strings.Contains(installed.Label, want) {
 			t.Fatalf("installed label %q does not contain %q", installed.Label, want)
 		}
-	}
-	if selection.items[1].Disabled || !selection.items[1].Selected {
-		t.Fatalf("missing item = %#v, want enabled and selected", selection.items[1])
 	}
 	if got, want := adapter.calls, []string{"install:bun", "verify:bun"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("adapter calls = %v, want %v", got, want)

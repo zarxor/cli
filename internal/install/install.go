@@ -221,7 +221,8 @@ func mergeStatus(target *ToolStatus, duplicate ToolStatus) {
 }
 
 func selectionItems(action Action, statuses []ToolStatus) []Item {
-	items := make([]Item, 0, len(statuses))
+	available := make([]Item, 0, len(statuses))
+	installed := make([]Item, 0, len(statuses))
 	for _, status := range statuses {
 		label := status.Tool.Name
 		disabled := action == Install && status.Installed
@@ -234,9 +235,14 @@ func selectionItems(action Action, statuses []ToolStatus) []Item {
 		} else if action == Update {
 			label = fmt.Sprintf("%s (%s -> %s)", status.Tool.Name, versionLabel(status.CurrentVersion), versionLabel(status.CandidateVersion))
 		}
-		items = append(items, Item{Tool: status.Tool, Label: label, Selected: !disabled, Disabled: disabled})
+		item := Item{Tool: status.Tool, Label: label, Selected: !disabled, Disabled: disabled}
+		if disabled {
+			installed = append(installed, item)
+		} else {
+			available = append(available, item)
+		}
 	}
-	return items
+	return append(available, installed...)
 }
 
 func renderStatuses(renderer *render.Renderer, statuses []ToolStatus) error {
