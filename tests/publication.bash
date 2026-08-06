@@ -39,6 +39,8 @@ readme=${readme//$'\r'/}
 assert_contains "$readme" "# Johan Bostrom CLI" "README uses the product name"
 assert_contains "$readme" "https://cli.johanbostrom.se/install.sh" "README documents the Linux bootstrap URL"
 assert_contains "$readme" "https://cli.johanbostrom.se/install.ps1" "README documents the Windows bootstrap URL"
+assert_contains "$readme" "curl -fsSL https://cli.johanbostrom.se/install.sh | bash" "README documents the Linux one-line installation"
+assert_contains "$readme" "Invoke-RestMethod https://cli.johanbostrom.se/install.ps1 | Invoke-Expression" "README documents the Windows one-line installation"
 assert_contains "$readme" $'```text\njb tools install\n```' "README documents full catalog installation"
 assert_contains "$readme" "jb tools install --yes" "README documents non-interactive full catalog installation"
 assert_contains "$readme" "preselected" "README explains the default interactive selection"
@@ -68,7 +70,7 @@ assert_contains "$readme" "JB_RELEASE_BASE_URL" "README documents the release-se
 assert_not_contains "$readme" "scripts.johanbostrom.se" "README removes the old public URL"
 assert_not_contains "$readme" "linux/dev-server/setup.sh" "README removes the retired installer path"
 
-for site_file in site/index.html site/styles.css; do
+for site_file in site/index.html site/styles.css site/site.js; do
   if [[ -f "$site_file" ]]; then
     pass "$site_file is present in the published site source"
   else
@@ -82,9 +84,14 @@ if [[ -f site/index.html ]]; then
 fi
 
 assert_contains "$site_page" 'href="styles.css"' "site page loads its local stylesheet"
+assert_contains "$site_page" 'src="site.js"' "site page loads its copy-button behavior"
 assert_contains "$site_page" "Johan Bostrom CLI" "site page uses the product name"
 assert_contains "$site_page" 'href="/install.sh"' "site page links to the Linux installer"
 assert_contains "$site_page" 'href="/install.ps1"' "site page links to the Windows installer"
+assert_contains "$site_page" "curl -fsSL https://cli.johanbostrom.se/install.sh | bash" "site page shows the Linux one-line installation"
+assert_contains "$site_page" "Invoke-RestMethod https://cli.johanbostrom.se/install.ps1 | Invoke-Expression" "site page shows the Windows one-line installation"
+assert_contains "$site_page" "data-copy-button" "site page adds copy buttons to console commands"
+assert_contains "$site_page" "aria-live=\"polite\"" "site page announces copy results accessibly"
 assert_contains "$site_page" "Debian/Ubuntu" "site page names Debian and Ubuntu support"
 assert_contains "$site_page" "Arch Linux" "site page names Arch support"
 assert_contains "$site_page" "Windows" "site page names Windows support"
@@ -129,6 +136,7 @@ assert_contains "$pages_workflow" "rm -rf _site" "Pages workflow clears the dedi
 assert_contains "$pages_workflow" "mkdir -p _site" "Pages workflow creates the dedicated site artifact"
 assert_contains "$pages_workflow" "cp -R site/. _site/" "Pages workflow copies the published site files"
 assert_contains "$pages_workflow" "cp install.sh install.ps1 CNAME _site/" "Pages workflow copies published installers and CNAME"
+assert_contains "$pages_workflow" "test -f _site/site.js" "Pages workflow checks the copy-button script is published"
 assert_contains "$pages_workflow" "path: _site" "Pages workflow uploads the dedicated site artifact"
 assert_not_contains "$pages_workflow" "path: ." "Pages workflow does not upload the repository root"
 

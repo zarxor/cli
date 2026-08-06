@@ -92,6 +92,7 @@ jobs:
           cp install.sh install.ps1 CNAME _site/
           test -f _site/index.html
           test -f _site/styles.css
+          test -f _site/site.js
           test ! -e _site/site
 
       - name: Upload Pages artifact

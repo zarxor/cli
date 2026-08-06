@@ -11,14 +11,21 @@ release.
 
 The bootstrap installers select the release for the current operating system
 and CPU architecture, download its SHA-256 checksum, verify the archive, and
-only then install `jb`. Review a bootstrap script before running it; do not pipe
-a downloaded script directly into a shell.
+only then install `jb`. The one-line commands below execute a downloaded
+bootstrap script directly; if you prefer to review the script first, use the
+download-and-review form instead.
 
 ### Debian/Ubuntu and Arch Linux
 
-Download the Linux bootstrap from
+For a one-line quick install:
+
+```bash
+curl -fsSL https://cli.johanbostrom.se/install.sh | bash
+```
+
+To download and review the Linux bootstrap first, use
 [`https://cli.johanbostrom.se/install.sh`](https://cli.johanbostrom.se/install.sh),
-review it, and run it:
+then review it and run it:
 
 ```bash
 curl -fsSLO https://cli.johanbostrom.se/install.sh
@@ -34,9 +41,15 @@ the destination is not writable.
 
 ### Windows
 
-Download the PowerShell bootstrap from
+For a one-line quick install:
+
+```powershell
+Invoke-RestMethod https://cli.johanbostrom.se/install.ps1 | Invoke-Expression
+```
+
+To download and review the PowerShell bootstrap first, use
 [`https://cli.johanbostrom.se/install.ps1`](https://cli.johanbostrom.se/install.ps1),
-review it, and run it:
+then review it and run it:
 
 ```powershell
 Invoke-WebRequest https://cli.johanbostrom.se/install.ps1 -OutFile install.ps1
