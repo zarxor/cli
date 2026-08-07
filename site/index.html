@@ -3,222 +3,260 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f1f3eb">
     <meta name="description" content="Install and manage a curated development toolchain with Johan Bostrom CLI.">
     <title>Johan Bostrom CLI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@10..48,200..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <script src="site.js" defer></script>
   </head>
   <body>
+    <!--
+    THESIS: A machine setup sheet that turns “install the CLI” into a visible, reversible plan; it refuses the generic hero-plus-card-grid.
+    OWN-WORLD: Matte paper, ink rules, electric blue calibration marks, coral warnings, and monospaced measurements form a restrained instrument-panel language.
+    STORY: A developer sees what jb manages, chooses a platform, copies a verified installer, then discovers the commands for preview, install, and update.
+    FIRST VIEWPORT: The brand and one-sentence promise sit left; a live-looking development profile, tool rows, and dry-run command form the right-hand instrument panel; Install jb is the primary action below the promise.
+    FORM: Calibration bench / instrument panel, candidate 4 of 7, seed a9419d7a.
+    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    -->
     <a class="skip-link" href="#main-content">Skip to content</a>
 
     <header class="site-header">
-      <div class="container header-content">
-        <div class="brand-lockup">
-          <a class="wordmark" href="#top" aria-label="Johan Bostrom CLI home">jb</a>
-          <span class="brand-name">Johan Bostrom CLI</span>
-        </div>
-        <nav aria-label="Primary navigation">
+      <div class="container header-inner">
+        <a class="brand-lockup" href="#top" aria-label="Johan Bostrom CLI home">
+          <span class="brand-mark" aria-hidden="true"><span>j</span><span>b</span></span>
+          <span class="brand-copy">Johan Bostrom CLI <small>documentation</small></span>
+        </a>
+        <nav class="primary-nav" aria-label="Primary navigation">
           <a href="#install">Install</a>
           <a href="#commands">Commands</a>
           <a href="#platforms">Platforms</a>
-          <a href="https://github.com/zarxor/scripts">Repository</a>
         </nav>
+        <a class="header-action" href="https://github.com/zarxor/scripts">Repository</a>
       </div>
     </header>
 
     <main id="main-content">
       <section class="hero" id="top" aria-labelledby="page-title">
-        <div class="container hero-grid">
-          <div class="hero-content">
-            <h1 id="page-title">Johan Bostrom CLI</h1>
-            <p class="lede">Install and update the tools your development machine needs with one small, transparent command-line tool.</p>
+        <div class="hero-grid container">
+          <div class="hero-copy">
+            <div class="hero-rule" aria-hidden="true"><span></span></div>
+            <h1 id="page-title">A <em>deliberate</em> setup for your dev machine.</h1>
+            <p class="lede">Johan Bostrom CLI installs and updates the tools your development machine needs, with a plan before every change.</p>
             <div class="hero-actions">
-              <a class="button" href="#install">Install jb</a>
-              <a class="button button-secondary" href="https://github.com/zarxor/scripts/releases">Browse Releases</a>
+              <a class="button button-primary" href="#install">Install jb</a>
+              <a class="button button-quiet" href="#commands">See the command surface</a>
             </div>
-            <p class="hero-footnote"><span class="status-dot" aria-hidden="true"></span>Linux and Windows · released through GitHub</p>
-          </div>
-          <div class="terminal-panel" aria-label="Example jb workflow">
-            <div class="terminal-bar">
-              <span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              <span class="terminal-title">quick start</span>
-              <span class="terminal-status">ready</span>
+            <div class="hero-meta" aria-label="Supported environments">
+              <span><i class="meta-signal" aria-hidden="true"></i>Linux + Windows</span>
+              <span>Standalone binary</span>
+              <span>GitHub Releases</span>
             </div>
-            <pre><code><span class="terminal-comment"># inspect a plan</span>
-<span class="terminal-prompt">$</span> jb tools install --dry-run
+          </div>
 
-<span class="terminal-comment"># install the catalog</span>
-<span class="terminal-prompt">$</span> jb tools install</code></pre>
-            <div class="terminal-footer"><span>preview before changes</span><span>interactive by default</span></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="section" id="install" aria-labelledby="install-title">
-        <div class="container">
-          <div class="section-heading">
-            <h2 id="install-title">Install jb</h2>
-            <p>Use a one-line quick install, or download and review the bootstrap script first. Both installers verify the released archive and checksum before installing.</p>
-          </div>
-          <div class="card-grid">
-            <article class="card">
-              <div class="card-heading">
-                <h3>Linux</h3>
-                <span class="platform-meta">Debian · Ubuntu · Arch</span>
-              </div>
-              <p>For Debian/Ubuntu and Arch Linux. The default installation is user-local and does not need root access.</p>
-              <p class="install-label">One-line install</p>
-              <div class="code-block">
-                <pre><code>curl -fsSL https://cli.johanbostrom.se/install.sh | bash</code></pre>
-                <button class="copy-button" type="button" data-copy-button aria-label="Copy the Linux one-line install command">Copy</button>
-                <span class="copy-status" data-copy-status aria-live="polite"></span>
-              </div>
-              <p class="install-note">Prefer to review first? <a href="/install.sh">Download install.sh</a>, then run <code>bash install.sh</code>.</p>
-            </article>
-            <article class="card">
-              <div class="card-heading">
-                <h3>Windows</h3>
-                <span class="platform-meta">PowerShell</span>
-              </div>
-              <p>For Windows PowerShell. The default installation is in the current user's local application data.</p>
-              <p class="install-label">One-line install</p>
-              <div class="code-block">
-                <pre><code>Invoke-RestMethod https://cli.johanbostrom.se/install.ps1 | Invoke-Expression</code></pre>
-                <button class="copy-button" type="button" data-copy-button aria-label="Copy the Windows one-line install command">Copy</button>
-                <span class="copy-status" data-copy-status aria-live="polite"></span>
-              </div>
-              <p class="install-note">Prefer to review first? <a href="/install.ps1">Download install.ps1</a>, then run <code>.\install.ps1</code>.</p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section class="section section-dark" id="commands" aria-labelledby="commands-title">
-        <div class="container">
-          <div class="section-heading">
-            <h2 id="commands-title">Install and update</h2>
-            <p>Plans are shown before changes are made. Add <code>--yes</code> for automation or <code>--dry-run</code> to inspect a plan without changing your machine.</p>
-          </div>
-          <div class="command-grid">
-            <article class="command-card command-card-featured">
-              <div class="command-card-main">
-                <div class="command-card-heading">
-                  <h3>Install supported tools</h3>
-                  <span class="command-meta">interactive</span>
+          <div class="instrument-panel" aria-label="Development profile preview">
+            <div class="instrument-header">
+              <span>JB / SETUP PROFILE</span>
+              <span class="instrument-status"><i aria-hidden="true"></i>READY TO PLAN</span>
+            </div>
+            <div class="instrument-body">
+              <div class="instrument-title-row">
+                <div>
+                  <span class="field-label">Profile</span>
+                  <strong>development</strong>
                 </div>
-                <p>Open the interactive list with every not-yet-installed eligible tool preselected. Already installed tools are grayed out with their detected version and cannot be selected; use <code>jb tools update</code> to update them. Use ↑/↓ to move, Space to toggle, Enter to accept, or Escape/Ctrl+C to cancel safely.</p>
+                <span class="instrument-index">LOCAL / 01</span>
+              </div>
+              <ul class="manifest-list" aria-label="Development tool groups">
+                <li><span class="manifest-mark" aria-hidden="true"></span><span>Git + GitHub CLI</span><small>version control</small></li>
+                <li><span class="manifest-mark" aria-hidden="true"></span><span>Docker + Compose</span><small>containers</small></li>
+                <li><span class="manifest-mark" aria-hidden="true"></span><span>Node.js + package tools</span><small>runtime</small></li>
+                <li><span class="manifest-mark" aria-hidden="true"></span><span>Bun + Codex</span><small>workflow</small></li>
+              </ul>
+            </div>
+            <div class="instrument-command">
+              <div class="command-line"><span class="prompt" aria-hidden="true">$</span><code>jb tools install <span>--dry-run</span></code></div>
+              <span>preview first</span>
+            </div>
+            <div class="instrument-footer"><span>LIVE MACHINE STATE</span><span>NO CHANGES MADE</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="principles" aria-label="What jb makes visible">
+        <div class="container principle-grid">
+          <article class="principle">
+            <span class="principle-mark principle-mark-blue" aria-hidden="true"></span>
+            <div><strong>Preview before change</strong><span>Use <code>--dry-run</code> to inspect the plan.</span></div>
+          </article>
+          <article class="principle">
+            <span class="principle-mark principle-mark-coral" aria-hidden="true"></span>
+            <div><strong>Verify every release</strong><span>Archives are checked against SHA-256.</span></div>
+          </article>
+          <article class="principle">
+            <span class="principle-mark principle-mark-lime" aria-hidden="true"></span>
+            <div><strong>Keep privilege deliberate</strong><span>Native providers, limited elevation.</span></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section install-section" id="install" aria-labelledby="install-title">
+        <div class="container">
+          <div class="section-intro">
+            <div><h2 id="install-title">Start with the installer that fits your shell.</h2></div>
+            <p>Choose a platform, copy the quick install, or download the bootstrap script to review it first. Go is not required on the target machine.</p>
+          </div>
+
+          <div class="install-layout">
+            <div class="platform-workbench">
+              <div class="workbench-header"><span>INSTALLER / ENTRY POINT</span><span>REVIEWABLE BY DEFAULT</span></div>
+              <div class="platform-tabs" role="tablist" aria-label="Choose an installer platform">
+                <button id="linux-tab" type="button" role="tab" aria-selected="true" aria-controls="linux-panel" data-platform-tab="linux">Linux <small>bash</small></button>
+                <button id="windows-tab" type="button" role="tab" aria-selected="false" aria-controls="windows-panel" data-platform-tab="windows">Windows <small>PowerShell</small></button>
+              </div>
+              <article class="platform-panel" id="linux-panel" role="tabpanel" data-platform-panel="linux" aria-labelledby="linux-tab">
+                <div class="platform-title-row"><div><h3>Debian, Ubuntu, or Arch</h3><p>User-local by default, without root access.</p></div><span class="platform-code">LINUX / 01</span></div>
+                <p class="install-label">One-line install</p>
                 <div class="code-block">
-                  <pre><code>jb tools install</code></pre>
-                  <button class="copy-button" type="button" data-copy-button aria-label="Copy the supported tools install command">Copy</button>
+                  <pre><code>curl -fsSL https://cli.johanbostrom.se/install.sh | bash</code></pre>
+                  <button class="copy-button" type="button" data-copy-button aria-label="Copy the Linux one-line install command">Copy</button>
                   <span class="copy-status" data-copy-status aria-live="polite"></span>
                 </div>
-                <p>Redirected input uses a plain numbered fallback. Set <code>NO_COLOR</code> to disable terminal colors; symbols keep the state readable.</p>
-              </div>
-              <div class="selection-preview">
-                <div class="preview-heading"><span>Selection preview</span><span>default</span></div>
-                <pre><code>Available to install
-❯ [✓] Git
-  [✗] Docker
+                <p class="install-note">Prefer to review first? <a href="/install.sh">Download install.sh</a>, then run <code>bash install.sh</code>.</p>
+              </article>
+              <article class="platform-panel" id="windows-panel" role="tabpanel" data-platform-panel="windows" aria-labelledby="windows-tab">
+                <div class="platform-title-row"><div><h3>Windows PowerShell</h3><p>Installs in the current user's local application data by default.</p></div><span class="platform-code">WINDOWS / 01</span></div>
+                <p class="install-label">One-line install</p>
+                <div class="code-block">
+                  <pre><code>Invoke-RestMethod https://cli.johanbostrom.se/install.ps1 | Invoke-Expression</code></pre>
+                  <button class="copy-button" type="button" data-copy-button aria-label="Copy the Windows one-line install command">Copy</button>
+                  <span class="copy-status" data-copy-status aria-live="polite"></span>
+                </div>
+                <p class="install-note">Prefer to review first? <a href="/install.ps1">Download install.ps1</a>, then run <code>.\install.ps1</code>.</p>
+              </article>
+            </div>
 
-Already installed
-  [-] GitHub CLI (already installed: 2.74.2)</code></pre>
-              </div>
-            </article>
-            <article class="command-card">
-              <div class="command-card-heading"><h3>Automate installation</h3><span class="command-meta">automation</span></div>
-              <p>Install the complete supported catalog without selection or confirmation prompts.</p>
-              <div class="code-block">
-                <pre><code>jb tools install --yes</code></pre>
-                <button class="copy-button" type="button" data-copy-button aria-label="Copy the automated installation command">Copy</button>
-                <span class="copy-status" data-copy-status aria-live="polite"></span>
-              </div>
-            </article>
-            <article class="command-card">
-              <div class="command-card-heading"><h3>Development profile</h3><span class="command-meta">profile</span></div>
-              <p>Select the built-in development toolchain explicitly.</p>
-              <div class="code-block">
-                <pre><code>jb tools install --profiles=development</code></pre>
-                <button class="copy-button" type="button" data-copy-button aria-label="Copy the development profile command">Copy</button>
-                <span class="copy-status" data-copy-status aria-live="polite"></span>
-              </div>
-            </article>
-            <article class="command-card">
-              <div class="command-card-heading"><h3>Choose a tool</h3><span class="command-meta">focused</span></div>
-              <p>Narrow a profile while retaining the dependencies it needs.</p>
-              <div class="code-block">
-                <pre><code>jb tools install --profiles=development --only=bun</code></pre>
-                <button class="copy-button" type="button" data-copy-button aria-label="Copy the single-tool installation command">Copy</button>
-                <span class="copy-status" data-copy-status aria-live="polite"></span>
-              </div>
-            </article>
-            <article class="command-card">
-              <div class="command-card-heading"><h3>Update jb itself</h3><span class="command-meta">release</span></div>
-              <p>Download the latest CLI release, verify its checksum, and replace the installed binary.</p>
-              <div class="code-block">
-                <pre><code>jb update</code></pre>
-                <button class="copy-button" type="button" data-copy-button aria-label="Copy the CLI update command">Copy</button>
-                <span class="copy-status" data-copy-status aria-live="polite"></span>
-              </div>
-            </article>
-            <article class="command-card">
-              <div class="command-card-heading"><h3>Update installed tools</h3><span class="command-meta">refresh</span></div>
-              <p>Discover installed tools and their versions live, then show only provider-owned tools with an available update. Ambiguous installations are left untouched.</p>
-              <div class="code-block">
-                <pre><code>jb tools update</code></pre>
-                <button class="copy-button" type="button" data-copy-button aria-label="Copy the tools update command">Copy</button>
-                <span class="copy-status" data-copy-status aria-live="polite"></span>
-              </div>
-            </article>
-            <article class="command-card">
-              <div class="command-card-heading"><h3>Update a profile selection</h3><span class="command-meta">focused</span></div>
-              <p>Narrow the profile to Bun and its required dependencies; only installed members are updated.</p>
-              <div class="code-block">
-                <pre><code>jb tools update --profiles=development --only=bun</code></pre>
-                <button class="copy-button" type="button" data-copy-button aria-label="Copy the narrowed profile update command">Copy</button>
-                <span class="copy-status" data-copy-status aria-live="polite"></span>
-              </div>
-            </article>
+            <aside class="install-rail" aria-labelledby="install-steps-title">
+              <div class="rail-header"><span id="install-steps-title">WHAT HAPPENS NEXT</span><span class="rail-line" aria-hidden="true"></span></div>
+              <ol class="install-steps">
+                <li><span>1</span><div><strong>Download</strong><p>The bootstrap selects the current release for your OS and CPU.</p></div></li>
+                <li><span>2</span><div><strong>Verify</strong><p>The archive and its adjacent checksum must agree before install.</p></div></li>
+                <li><span>3</span><div><strong>Run</strong><p>The installed binary prints the next shell action when PATH needs help.</p></div></li>
+              </ol>
+              <div class="rail-note"><span class="note-mark" aria-hidden="true"></span><p>Review the script before running it if that is your preferred path.</p></div>
+            </aside>
           </div>
         </div>
       </section>
 
-      <section class="section" aria-labelledby="catalog-title">
-        <div class="container split-layout">
-          <div>
-            <h2 id="catalog-title">Development tool catalog</h2>
-            <p>The built-in <code>development</code> profile resolves dependencies and deduplicates shared tools before showing the plan.</p>
+      <section class="section command-section" id="commands" aria-labelledby="commands-title">
+        <div class="container">
+          <div class="section-intro section-intro-dark">
+            <div><h2 id="commands-title">Keep the plan visible.</h2></div>
+            <p>The command surface is small on purpose: install, update, narrow, or preview. Interactive by default; ready for automation when you need it.</p>
           </div>
-          <ul class="tool-list" aria-label="Development tools">
-            <li>Git</li>
-            <li>GitHub CLI</li>
-            <li>Docker, Docker Buildx, and Docker Compose</li>
-            <li>nvm and Node.js LTS</li>
-            <li>npm, Corepack, pnpm, and Yarn</li>
-            <li>Codex and Bun</li>
-          </ul>
+
+          <div class="command-layout">
+            <div class="command-ledger">
+              <article class="command-row command-row-featured">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install</code><span class="command-tag">interactive</span></div><p>Open the supported catalog with every not-yet-installed eligible tool preselected. Installed tools remain visible with their detected version.</p></div>
+                <div class="inline-code code-block"><pre><code>jb tools install</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the tools install command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools update</code><span class="command-tag">refresh</span></div><p>Discover live versions and show only installed tools with an available provider-owned update.</p></div>
+                <div class="inline-code code-block"><pre><code>jb tools update</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the tools update command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb update</code><span class="command-tag">release</span></div><p>Download the latest CLI release, verify its checksum, and replace the installed binary.</p></div>
+                <div class="inline-code code-block"><pre><code>jb update</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the jb update command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install --yes</code><span class="command-tag">automation</span></div><p>Install the complete supported catalog without selection or confirmation prompts.</p></div>
+                <div class="inline-code code-block"><pre><code>jb tools install --yes</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the automated tools install command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install --profiles=development</code><span class="command-tag">profile</span></div><p>Select the built-in development toolchain explicitly; shared dependencies are deduplicated before the plan.</p></div>
+                <div class="inline-code code-block"><pre><code>jb tools install --profiles=development</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the development profile command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">--dry-run</code><span class="command-tag">preview</span></div><p>Append it to install or update to render the plan without changing the machine.</p></div>
+                <div class="inline-code code-block"><pre><code>jb tools update --dry-run</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the tools update dry run command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+            </div>
+
+            <aside class="command-preview" aria-label="Example selection preview">
+              <div class="preview-header"><span>PLAN OUTPUT</span><span>DRY RUN</span></div>
+              <pre><code><span class="preview-muted">$ jb tools install --dry-run</span>
+
+<span class="preview-blue">• Checking installed tools</span>
+<span class="preview-blue">• Reading provider state</span>
+<span class="preview-lime">• Plan ready — no changes made</span>
+
+<span class="preview-muted">Available to install</span>
+  [✓] Git
+  [✓] Docker
+
+<span class="preview-muted">Already installed</span>
+  [-] GitHub CLI</code></pre>
+              <p>Output stays readable in a terminal, in redirected input, and with <code>NO_COLOR</code>.</p>
+            </aside>
+          </div>
         </div>
       </section>
 
-      <section class="section section-tint" id="platforms" aria-labelledby="platforms-title">
-        <div class="container split-layout">
-          <div>
-            <h2 id="platforms-title">Privileges stay deliberate</h2>
-            <p>Each adapter uses the native package manager and requests elevation only for actions that require it. macOS support is planned for a future release.</p>
+      <section class="section system-section" id="platforms" aria-labelledby="system-title">
+        <div class="container">
+          <div class="section-intro">
+            <div><h2 id="system-title">Know what gets managed.</h2></div>
+            <p>The development profile resolves dependencies from live machine state, then hands each tool to the provider that owns it.</p>
           </div>
-          <dl class="platform-list">
-            <div><dt>Debian/Ubuntu</dt><dd>Uses supported apt repositories and sudo only for system package operations.</dd></div>
-            <div><dt>Arch Linux</dt><dd>Uses full pacman transactions with the same limited privilege boundary.</dd></div>
-            <div><dt>Windows</dt><dd>Uses per-user package operations where possible; machine-wide actions request elevation.</dd></div>
-            <div><dt>macOS</dt><dd>Planned for the future; not supported by the initial release.</dd></div>
-          </dl>
+
+          <div class="system-layout">
+            <div class="catalog-manifest">
+              <div class="manifest-heading"><span>DEVELOPMENT PROFILE</span><span>CATALOG / LIVE</span></div>
+              <div class="catalog-row"><span class="catalog-index">01</span><strong>Version control</strong><span>Git, GitHub CLI</span></div>
+              <div class="catalog-row"><span class="catalog-index">02</span><strong>Containers</strong><span>Docker, Buildx, Compose</span></div>
+              <div class="catalog-row"><span class="catalog-index">03</span><strong>JavaScript runtime</strong><span>nvm, Node.js LTS</span></div>
+              <div class="catalog-row"><span class="catalog-index">04</span><strong>Package tools</strong><span>npm, Corepack, pnpm, Yarn</span></div>
+              <div class="catalog-row"><span class="catalog-index">05</span><strong>Workflow</strong><span>Codex, Bun</span></div>
+            </div>
+
+            <div class="boundary-list">
+              <div class="boundary-heading"><span>PROVIDER BOUNDARIES</span><span>PRIVILEGE / DELIBERATE</span></div>
+              <dl>
+                <div><dt>Debian / Ubuntu</dt><dd>Supported apt repositories; sudo only for system package operations.</dd></div>
+                <div><dt>Arch Linux</dt><dd>Full pacman transactions with the same limited privilege boundary.</dd></div>
+                <div><dt>Windows</dt><dd>Per-user package operations where possible; elevation only when required.</dd></div>
+                <div><dt>macOS</dt><dd class="boundary-planned">Planned for a future release.</dd></div>
+              </dl>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing-section" aria-labelledby="closing-title">
+        <div class="container closing-grid">
+          <div>
+            <div class="hero-rule hero-rule-dark" aria-hidden="true"><span></span></div>
+            <h2 id="closing-title">Make the first run deliberate.</h2>
+            <p>Start with a preview, keep the provider visible, and let the CLI do the repetitive work.</p>
+            <a class="button button-primary" href="#install">Install jb</a>
+          </div>
+          <div class="closing-terminal">
+            <span class="closing-label">FIRST COMMAND</span>
+            <code><span class="prompt">$</span> jb tools install --dry-run</code>
+            <span class="closing-note">no changes made</span>
+          </div>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
-      <div class="container footer-content">
-        <p>Static documentation for Johan Bostrom CLI.</p>
-        <p><a href="https://github.com/zarxor/scripts">Repository</a> <span aria-hidden="true">·</span> <a href="https://github.com/zarxor/scripts/releases">GitHub Releases</a></p>
+      <div class="container footer-inner">
+        <p><span class="footer-mark" aria-hidden="true">jb</span> Static documentation for Johan Bostrom CLI.</p>
+        <p><a href="https://github.com/zarxor/scripts">Repository</a><span aria-hidden="true"> / </span><a href="https://github.com/zarxor/scripts/releases">GitHub Releases</a></p>
       </div>
     </footer>
   </body>

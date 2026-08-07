@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 2,
+  "title": "Design System: Johan Bostrom CLI",
+  "source": [
+    "DESIGN.md",
+    "site/index.html",
+    "site/styles.css",
+    "site/site.js"
+  ],
+  "narrative": {
+    "northStar": "The Calibration Bench",
+    "thesis": "A reversible machine setup sheet for inspecting and changing a development toolchain.",
+    "visualWorld": "Matte paper, ink rules, electric-blue calibration marks, coral warnings, and lime readiness signals."
+  },
+  "motion": {
+    "buttonState": "160ms ease",
+    "instrumentScanline": "1.4s 0.35s ease-out forwards",
+    "reducedMotion": "Disable authored motion and smooth scrolling."
+  },
+  "breakpoints": {
+    "wideCompression": "68rem",
+    "stackedLayout": "56rem",
+    "mobileTightening": "38rem"
+  },
+  "depth": {
+    "default": "Flat surfaces with tonal bands and rules.",
+    "skipLink": "0 12px 28px rgb(18 22 29 / 15%)",
+    "atmosphere": "Faint circular calibration rings in the hero only."
+  },
+  "components": {
+    "primaryButton": "Blue action button with white text, subtle radius, 1px boundary, and visible focus ring.",
+    "instrumentPanel": "2px ink boundary with dark status header, white manifest, blue command band, and lime no-change footer.",
+    "platformWorkbench": "Ruled accessible tabs with one visible platform panel and a plain-text review command.",
+    "commandLedger": "Rule-separated command rows with one blue featured row and a dark preview surface."
+  }
+}
