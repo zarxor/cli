@@ -88,15 +88,22 @@ func TestCatalogIncludesCreatorGroupsAndImpeccable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 30 {
-		t.Fatalf("catalog entries = %d, want 30", len(entries))
+	if len(entries) != 31 {
+		t.Fatalf("catalog entries = %d, want 31", len(entries))
 	}
 	creators := make(map[string]int)
 	for _, entry := range entries {
 		creators[entry.Creator]++
 	}
-	if creators["Matt Pocock"] != 29 || creators["Paul Bakaus"] != 1 {
-		t.Fatalf("creator groups = %#v, want Matt Pocock=29 and Paul Bakaus=1", creators)
+	if creators["Matt Pocock"] != 29 || creators["Julius Brussee"] != 1 || creators["Paul Bakaus"] != 1 {
+		t.Fatalf("creator groups = %#v, want Matt Pocock=29, Julius Brussee=1, and Paul Bakaus=1", creators)
+	}
+	caveman, err := ResolveCatalog(Catalog, []SkillID{"caveman"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(caveman) != 1 || caveman[0].Creator != "Julius Brussee" || caveman[0].Source != "github:JuliusBrussee/caveman/skills/caveman@main" {
+		t.Fatalf("caveman entry = %#v, want Julius Brussee source", caveman)
 	}
 	impeccable, err := ResolveCatalog(Catalog, []SkillID{"impeccable"})
 	if err != nil {

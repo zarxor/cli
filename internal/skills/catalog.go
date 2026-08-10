@@ -45,6 +45,7 @@ var Catalog = []CatalogEntry{
 	{ID: "scaffold-exercises", Creator: "Matt Pocock", Name: "scaffold-exercises", Description: "Scaffold exercises for a learning or coding session.", Source: "github:mattpocock/skills/skills/misc/scaffold-exercises@main", Target: TargetCodex, Scope: ScopeUser},
 	{ID: "setup-pre-commit", Creator: "Matt Pocock", Name: "setup-pre-commit", Description: "Set up pre-commit checks for a project.", Source: "github:mattpocock/skills/skills/misc/setup-pre-commit@main", Target: TargetCodex, Scope: ScopeUser},
 
+	{ID: "caveman", Creator: "Julius Brussee", Name: "caveman", Description: "Keep agent responses concise while preserving technical substance.", Source: "github:JuliusBrussee/caveman/skills/caveman@main", Target: TargetCodex, Scope: ScopeUser},
 	{ID: "impeccable", Creator: "Paul Bakaus", Name: "impeccable", Description: "Design, redesign, critique, and polish frontend interfaces.", Source: "github:pbakaus/impeccable/.agents/skills/impeccable@main", Target: TargetCodex, Scope: ScopeUser},
 }
 

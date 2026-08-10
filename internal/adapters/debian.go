@@ -838,12 +838,11 @@ func expectedNVMExecMissingLine(line, executable string) bool {
 		if !ok {
 			continue
 		}
-		separator := strings.LastIndex(scriptAndLine, ": ")
-		if separator < 0 || filepath.Base(scriptAndLine[:separator]) != "nvm-exec" {
-			continue
+		script := strings.TrimSpace(scriptAndLine)
+		if separator := strings.LastIndex(script, ": "); separator >= 0 {
+			script = strings.TrimSpace(script[:separator])
 		}
-		lineNumber := strings.TrimPrefix(scriptAndLine[separator+2:], "line ")
-		if _, err := strconv.Atoi(lineNumber); err == nil {
+		if filepath.Base(script) == "nvm-exec" {
 			return true
 		}
 	}

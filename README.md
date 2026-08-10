@@ -168,16 +168,17 @@ jb skills install
 The install flow matches `jb tools install`: before the skill list appears, `jb`
 asks for an installation scope and the AI harnesses that should receive the
 skills. Global scope and both Codex and Claude harnesses are the defaults;
-not-yet-installed destinations are selected by default. The
-catalog currently includes the stable skills from [Matt Pocock's skills
-repository](https://github.com/mattpocock/skills) and the `impeccable` skill
-from [Impeccable](https://github.com/pbakaus/impeccable). Use `--only` to
-narrow the catalog, `--yes` to select every eligible skill without prompting,
-or `--dry-run` to preview the plan:
+not-yet-installed destinations are selected by default. The catalog currently
+includes the stable skills from [Matt Pocock's skills
+repository](https://github.com/mattpocock/skills), the `caveman` skill from
+[Julius Brussee's Caveman](https://github.com/JuliusBrussee/caveman), and the
+`impeccable` skill from [Impeccable](https://github.com/pbakaus/impeccable).
+Use `--only` to narrow the catalog, `--yes` to select every eligible skill
+without prompting, or `--dry-run` to preview the plan:
 
-The interactive catalog is grouped by creator, so the Matt Pocock collection
-and Impeccable appear as separate sections. Installation checks exactly the
-selected scope × harness combination; it cannot prove that an unknown AI
+The interactive catalog is grouped by creator, so the Matt Pocock, Julius
+Brussee, and Impeccable collections appear as separate sections. Installation
+checks exactly the selected scope × harness combination; it cannot prove that an unknown AI
 harness elsewhere on the machine has or does not have the same skill. Existing
 unmanaged directories at the selected destination are protected from overwrite.
 

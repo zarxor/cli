@@ -490,6 +490,27 @@ func TestLinuxTreatsMissingNVMVersionAsAbsent(t *testing.T) {
 	}
 }
 
+func TestLinuxTreatsNVMExecMissingComponentWithoutLineNumberAsAbsent(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+	fixture.LookPaths[nvmExec] = nvmExec
+	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "bun", "--version"}
+	fixture.Set("env", args, runner.Result{
+		Stderr:   nvmExec + ": exec: bun: not found\n",
+		ExitCode: 127,
+	}, errors.New("exit status 127"))
+	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+
+	got, err := adapter.Detect(context.Background(), mustTool(t, profile.Bun))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Installed {
+		t.Fatalf("Detect() = %#v, want absent Bun for an NVM-exec missing-component diagnostic", got)
+	}
+}
+
 func TestLinuxTreatsNVMUnavailableVersionDiagnosticAsAbsent(t *testing.T) {
 	fixture := runner.NewFixture()
 	home := t.TempDir()
