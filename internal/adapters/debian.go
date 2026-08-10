@@ -618,7 +618,8 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 	case profile.Yarn:
 		return a.runNVMExecutable(ctx, "corepack", "prepare", "yarn@stable", "--activate")
 	case profile.Bun:
-		return a.runNVMExecutable(ctx, "npm", "install", "--global", "bun@latest")
+		// Bun downloads its native runtime from the npm package's postinstall.
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "--ignore-scripts=false", "bun@latest")
 	default:
 		return fmt.Errorf("unsupported tool %q", tool.ID)
 	}
@@ -627,7 +628,7 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 func (a linuxAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error {
 	switch tool.ID {
 	case profile.Bun:
-		return a.runNVMExecutable(ctx, "npm", "install", "--global", "bun@latest")
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "--ignore-scripts=false", "bun@latest")
 	case profile.NVM:
 		version, err := a.latestNVMVersion(ctx)
 		if err != nil {
@@ -819,6 +820,9 @@ func expectedMissingComponent(id tools.ToolID, result runner.Result) bool {
 }
 
 func expectedMissingComponentExecutable(executable string, result runner.Result) bool {
+	if executable == "bun" && expectedBunPostinstallFailure(result) {
+		return true
+	}
 	if result.ExitCode != 127 {
 		return false
 	}
@@ -839,6 +843,15 @@ func expectedMissingComponentExecutable(executable string, result runner.Result)
 	default:
 		return false
 	}
+}
+
+func expectedBunPostinstallFailure(result runner.Result) bool {
+	if result.ExitCode != 1 {
+		return false
+	}
+	output := strings.ToLower(result.Stdout + "\n" + result.Stderr)
+	return strings.Contains(output, "bun's postinstall script was not run") &&
+		strings.Contains(output, "ignore-scripts")
 }
 
 func expectedMissingNVMVersion(result runner.Result) bool {

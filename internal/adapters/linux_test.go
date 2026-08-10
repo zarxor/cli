@@ -208,7 +208,7 @@ func TestArchBunUsesIntegrityCheckedNPMProviderWithoutSystemMutation(t *testing.
 		t.Fatal(err)
 	}
 
-	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", filepath.Join(home, ".nvm", "nvm-exec"), "npm", "install", "--global", "bun@latest")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", filepath.Join(home, ".nvm", "nvm-exec"), "npm", "install", "--global", "--ignore-scripts=false", "bun@latest")
 	for _, command := range fixture.Commands {
 		if command.Command == "sudo" || command.Command == "curl" {
 			t.Fatalf("Bun package install used an elevated or remote-script command: %#v", command)
@@ -225,7 +225,7 @@ func TestDebianBunUsesIntegrityCheckedNPMProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", filepath.Join(home, ".nvm", "nvm-exec"), "npm", "install", "--global", "bun@latest")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", filepath.Join(home, ".nvm", "nvm-exec"), "npm", "install", "--global", "--ignore-scripts=false", "bun@latest")
 }
 
 func TestLinuxUserToolInstallsAvoidUnverifiedRemoteScripts(t *testing.T) {
@@ -243,7 +243,7 @@ func TestLinuxUserToolInstallsAvoidUnverifiedRemoteScripts(t *testing.T) {
 	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", "@openai/codex@latest")
 	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "git", "clone", "--branch", "v0.40.3", "--depth", "1", "https://github.com/nvm-sh/nvm.git", filepath.Join(home, ".nvm"))
 	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "git", "-C", filepath.Join(home, ".nvm"), "checkout", "--detach", "d025499c7f5466d0dc0a324dc98eab72cce8377d")
-	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", "bun@latest")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", "--ignore-scripts=false", "bun@latest")
 	for _, command := range fixture.Commands {
 		if command.Command == "curl" {
 			t.Fatalf("user tool install downloaded an executable script: %#v", command)
@@ -533,6 +533,27 @@ func TestLinuxTreatsNVMExecMissingComponentWithoutLineNumberAsAbsent(t *testing.
 	}
 	if got.Installed {
 		t.Fatalf("Detect() = %#v, want absent Bun for an NVM-exec missing-component diagnostic", got)
+	}
+}
+
+func TestLinuxTreatsBunPostinstallFailureAsAbsent(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+	fixture.LookPaths[nvmExec] = nvmExec
+	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "bun", "--version"}
+	fixture.Set("env", args, runner.Result{
+		Stderr:   "Error: Bun's postinstall script was not run.\n\nThis occurs when using --ignore-scripts during installation.\n",
+		ExitCode: 1,
+	}, errors.New("exit status 1"))
+	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+
+	got, err := adapter.Detect(context.Background(), mustTool(t, profile.Bun))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Installed {
+		t.Fatalf("Detect() = %#v, want absent Bun when its postinstall script was skipped", got)
 	}
 }
 
