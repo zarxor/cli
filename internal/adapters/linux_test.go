@@ -490,6 +490,27 @@ func TestLinuxTreatsMissingNVMVersionAsAbsent(t *testing.T) {
 	}
 }
 
+func TestLinuxTreatsNVMUnavailableVersionDiagnosticAsAbsent(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+	fixture.LookPaths[nvmExec] = nvmExec
+	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "node", "--version"}
+	fixture.Set("env", args, runner.Result{
+		Stderr:   `N/A: version "lts/* -> N/A" is not yet installed.` + "\n",
+		ExitCode: 127,
+	}, errors.New("exit status 127"))
+	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+
+	got, err := adapter.Detect(context.Background(), mustTool(t, profile.Node))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Installed {
+		t.Fatalf("Detect() = %#v, want absent Node.js for an unavailable NVM version", got)
+	}
+}
+
 func TestLinuxBrokenPresentExecutablesRemainDetectionErrors(t *testing.T) {
 	tests := []struct {
 		name    string
