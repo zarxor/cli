@@ -402,7 +402,7 @@ func TestPublishTagsUploadsVerifiesAndPublishes(t *testing.T) {
 		root: t.TempDir(), head: "abc123", version: Version{Major: 1}, artifactDir: makeArtifactDir(t),
 	})
 	if err != nil { t.Fatal(err) }
-	if url != "https://github.com/zarxor/scripts/releases/tag/v1.0.0" { t.Fatalf("url = %q", url) }
+	if url != "https://github.com/zarxor/cli/releases/tag/v1.0.0" { t.Fatalf("url = %q", url) }
 	assertCallOrder(t, r.calls,
 		"git tag -a v1.0.0 abc123 -m Release v1.0.0",
 		"git push origin refs/tags/v1.0.0",

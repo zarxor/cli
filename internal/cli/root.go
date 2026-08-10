@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/zarxor/scripts/internal/render"
+	"github.com/zarxor/cli/internal/render"
 )
 
 type themeFactory func(*cobra.Command) render.Theme

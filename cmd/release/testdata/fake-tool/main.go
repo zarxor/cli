@@ -47,7 +47,7 @@ func runGit(args []string) {
 	case "status --porcelain", "fetch origin main --tags", "tag -a v1.2.4 abc123 -m Release v1.2.4", "push origin refs/tags/v1.2.4":
 		return
 	case "remote get-url origin":
-		fmt.Println("git@github.com:zarxor/scripts.git")
+		fmt.Println("git@github.com:zarxor/cli.git")
 	case "rev-parse HEAD", "rev-parse origin/main":
 		fmt.Println("abc123")
 	case "tag --list":
@@ -96,7 +96,7 @@ func runGitHub(args []string) {
 			Assets  []struct {
 				Name string `json:"name"`
 			} `json:"assets"`
-		}{IsDraft: draft, URL: "https://github.com/zarxor/scripts/releases/tag/v1.2.4"}
+		}{IsDraft: draft, URL: "https://github.com/zarxor/cli/releases/tag/v1.2.4"}
 		for _, name := range assets {
 			response.Assets = append(response.Assets, struct {
 				Name string `json:"name"`

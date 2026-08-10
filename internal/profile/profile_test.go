@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/zarxor/scripts/internal/profile"
+	"github.com/zarxor/cli/internal/profile"
 )
 
 func TestDevelopmentProfileContainsDevelopmentTools(t *testing.T) {

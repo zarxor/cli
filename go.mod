@@ -1,4 +1,4 @@
-module github.com/zarxor/scripts
+module github.com/zarxor/cli
 
 go 1.26.5
 

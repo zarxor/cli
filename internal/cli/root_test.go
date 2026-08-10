@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/zarxor/scripts/internal/render"
+	"github.com/zarxor/cli/internal/render"
 )
 
 func TestExecuteVersion(t *testing.T) {

@@ -1,4 +1,4 @@
-name: Deploy scripts to GitHub Pages
+name: Deploy CLI to GitHub Pages
 
 on:
   push:

@@ -115,7 +115,7 @@ try {
             $env:CGO_ENABLED = '0'
             Push-Location -LiteralPath $repoRoot
             try {
-                & $GoExe build -trimpath -buildvcs=false "-ldflags=-s -w -X github.com/zarxor/scripts/internal/version.Version=$Version" -o $binaryPath ./cmd/jb
+                & $GoExe build -trimpath -buildvcs=false "-ldflags=-s -w -X github.com/zarxor/cli/internal/version.Version=$Version" -o $binaryPath ./cmd/jb
             } finally {
                 Pop-Location
             }

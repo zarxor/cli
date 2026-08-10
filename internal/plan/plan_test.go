@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/zarxor/scripts/internal/plan"
-	"github.com/zarxor/scripts/internal/platform"
-	"github.com/zarxor/scripts/internal/profile"
+	"github.com/zarxor/cli/internal/plan"
+	"github.com/zarxor/cli/internal/platform"
+	"github.com/zarxor/cli/internal/profile"
 )
 
 func TestMergeProfilesExpandsDependenciesInCatalogOrder(t *testing.T) {

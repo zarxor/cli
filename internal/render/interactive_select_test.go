@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"charm.land/huh/v2"
-	"github.com/zarxor/scripts/internal/profile"
-	"github.com/zarxor/scripts/internal/tools"
+	"github.com/zarxor/cli/internal/profile"
+	"github.com/zarxor/cli/internal/tools"
 )
 
 func TestInteractiveSelectionMovesTogglesAndAccepts(t *testing.T) {

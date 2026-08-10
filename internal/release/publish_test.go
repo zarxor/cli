@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const releaseURL = "https://github.com/zarxor/scripts/releases/tag/v1.0.0"
+const releaseURL = "https://github.com/zarxor/cli/releases/tag/v1.0.0"
 
 func releaseJSON(draft bool, names []string) string {
 	assets := make([]string, 0, len(names))

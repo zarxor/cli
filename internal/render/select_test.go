@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zarxor/scripts/internal/profile"
-	"github.com/zarxor/scripts/internal/render"
-	"github.com/zarxor/scripts/internal/tools"
+	"github.com/zarxor/cli/internal/profile"
+	"github.com/zarxor/cli/internal/render"
+	"github.com/zarxor/cli/internal/tools"
 )
 
 func TestNumberedSelectionTogglesDefaultSelections(t *testing.T) {

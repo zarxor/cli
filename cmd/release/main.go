@@ -8,7 +8,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/zarxor/scripts/internal/release"
+	"github.com/zarxor/cli/internal/release"
 )
 
 var errReleaseCancelled = release.ErrCancelled

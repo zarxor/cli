@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zarxor/scripts/internal/detect"
-	"github.com/zarxor/scripts/internal/profile"
-	"github.com/zarxor/scripts/internal/runner"
-	"github.com/zarxor/scripts/internal/tools"
+	"github.com/zarxor/cli/internal/detect"
+	"github.com/zarxor/cli/internal/profile"
+	"github.com/zarxor/cli/internal/runner"
+	"github.com/zarxor/cli/internal/tools"
 )
 
 // ArchAdapter installs distribution packages through pacman and reuses the

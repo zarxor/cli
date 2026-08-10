@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/zarxor/scripts/internal/render"
-	"github.com/zarxor/scripts/internal/selfupdate"
+	"github.com/zarxor/cli/internal/render"
+	"github.com/zarxor/cli/internal/selfupdate"
 )
 
 func newUpdateCommand(themeFor themeFactory) *cobra.Command {

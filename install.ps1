@@ -76,7 +76,7 @@ try {
     $releaseBaseUrl = if ($env:JB_RELEASE_BASE_URL) {
         $env:JB_RELEASE_BASE_URL.TrimEnd('/')
     } else {
-        'https://github.com/zarxor/scripts/releases/latest/download'
+        'https://github.com/zarxor/cli/releases/latest/download'
     }
     $architecture = Get-ReleaseArchitecture
     $asset = "jb_windows_$architecture.zip"

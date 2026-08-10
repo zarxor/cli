@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/zarxor/scripts/internal/tools"
+	"github.com/zarxor/cli/internal/tools"
 )
 
 type VersionRow struct {

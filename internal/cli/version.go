@@ -2,8 +2,8 @@ package cli
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/zarxor/scripts/internal/render"
-	"github.com/zarxor/scripts/internal/version"
+	"github.com/zarxor/cli/internal/render"
+	"github.com/zarxor/cli/internal/version"
 )
 
 func newVersionCommand(themeFor themeFactory) *cobra.Command {

@@ -64,7 +64,7 @@ build_target() {
   (
     cd "$repo_root"
     GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 "$go_exe" build -trimpath -buildvcs=false \
-      -ldflags "-s -w -X github.com/zarxor/scripts/internal/version.Version=$version" \
+      -ldflags "-s -w -X github.com/zarxor/cli/internal/version.Version=$version" \
       -o "$binary_path" ./cmd/jb
   )
   if [[ $os == linux ]]; then

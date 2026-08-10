@@ -9,11 +9,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/zarxor/scripts/internal/adapters"
-	"github.com/zarxor/scripts/internal/plan"
-	"github.com/zarxor/scripts/internal/platform"
-	"github.com/zarxor/scripts/internal/render"
-	"github.com/zarxor/scripts/internal/tools"
+	"github.com/zarxor/cli/internal/adapters"
+	"github.com/zarxor/cli/internal/plan"
+	"github.com/zarxor/cli/internal/platform"
+	"github.com/zarxor/cli/internal/render"
+	"github.com/zarxor/cli/internal/tools"
 )
 
 type SelectionUI = render.SelectionUI

@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zarxor/scripts/internal/detect"
-	"github.com/zarxor/scripts/internal/profile"
-	"github.com/zarxor/scripts/internal/runner"
-	"github.com/zarxor/scripts/internal/tools"
+	"github.com/zarxor/cli/internal/detect"
+	"github.com/zarxor/cli/internal/profile"
+	"github.com/zarxor/cli/internal/runner"
+	"github.com/zarxor/cli/internal/tools"
 )
 
 // Adapter is the platform boundary used by installation planning.

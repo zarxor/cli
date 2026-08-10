@@ -4,7 +4,7 @@ package tools
 import (
 	"fmt"
 
-	"github.com/zarxor/scripts/internal/profile"
+	"github.com/zarxor/cli/internal/profile"
 )
 
 // Tool and ToolID are the catalog boundary types consumed by adapters and

@@ -64,7 +64,7 @@ func successfulPreflightRunner(root string) *fakeRunner {
 			commandKey(paths["gh"], "auth", "status"):                     {output: "authenticated\n"},
 			commandKey(paths["git"], "symbolic-ref", "--short", "HEAD"):   {output: "main\n"},
 			commandKey(paths["git"], "status", "--porcelain"):             {output: ""},
-			commandKey(paths["git"], "remote", "get-url", "origin"):       {output: "git@github.com:zarxor/scripts.git\n"},
+			commandKey(paths["git"], "remote", "get-url", "origin"):       {output: "git@github.com:zarxor/cli.git\n"},
 			commandKey(paths["git"], "fetch", "origin", "main", "--tags"): {output: ""},
 			commandKey(paths["git"], "rev-parse", "HEAD"):                 {output: "abc123\n"},
 			commandKey(paths["git"], "rev-parse", "origin/main"):          {output: "abc123\n"},

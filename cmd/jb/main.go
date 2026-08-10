@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/zarxor/scripts/internal/cli"
+	"github.com/zarxor/cli/internal/cli"
 )
 
 func main() {

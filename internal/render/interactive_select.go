@@ -12,7 +12,7 @@ import (
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/zarxor/scripts/internal/tools"
+	"github.com/zarxor/cli/internal/tools"
 )
 
 type InteractiveSelection struct {

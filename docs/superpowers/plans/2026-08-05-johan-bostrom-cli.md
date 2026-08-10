@@ -108,7 +108,7 @@ Expected: FAIL because the Go module and command implementation do not exist.
 
 - [ ] **Step 3: Write the minimal implementation**
 
-Run `go mod init github.com/zarxor/scripts` and
+Run `go mod init github.com/zarxor/cli` and
 `go get github.com/spf13/cobra@v1.10.2`. Create the root command with `Use:
 "jb"`, `Short: "Johan Bostrom CLI"`, and `version`/`help` commands. Keep
 `ExecuteWithIO` injectable so tests never need to spawn a process.

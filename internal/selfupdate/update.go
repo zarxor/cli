@@ -23,7 +23,7 @@ import (
 const (
 	// DefaultReleaseBaseURL is the latest-release asset root used by the
 	// bootstrap installers and published CLI binaries.
-	DefaultReleaseBaseURL = "https://github.com/zarxor/scripts/releases/latest/download"
+	DefaultReleaseBaseURL = "https://github.com/zarxor/cli/releases/latest/download"
 
 	maxArchiveSize  = int64(512 << 20)
 	maxBinarySize   = int64(256 << 20)

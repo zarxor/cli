@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zarxor/scripts/internal/tools"
+	"github.com/zarxor/cli/internal/tools"
 )
 
 func TestRendererResultUsesSemanticSymbolsAndWords(t *testing.T) {

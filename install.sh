@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-RELEASE_BASE_URL=${JB_RELEASE_BASE_URL:-https://github.com/zarxor/scripts/releases/latest/download}
+RELEASE_BASE_URL=${JB_RELEASE_BASE_URL:-https://github.com/zarxor/cli/releases/latest/download}
 INSTALL_DIR=${JB_INSTALL_DIR:-${HOME:?HOME is required}/.local/bin}
 TEMP_DIR=
 
