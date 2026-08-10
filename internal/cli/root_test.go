@@ -44,6 +44,9 @@ func TestExecuteHelpListsTopLevelCommands(t *testing.T) {
 	if !strings.Contains(output.String(), "tools") {
 		t.Fatal(output.String())
 	}
+	if !strings.Contains(output.String(), "skills") {
+		t.Fatal(output.String())
+	}
 	if !strings.Contains(output.String(), "version") {
 		t.Fatal(output.String())
 	}

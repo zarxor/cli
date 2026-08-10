@@ -14,6 +14,7 @@ import (
 
 	"github.com/zarxor/cli/internal/adapters"
 	"github.com/zarxor/cli/internal/detect"
+	"github.com/zarxor/cli/internal/host"
 	"github.com/zarxor/cli/internal/install"
 	"github.com/zarxor/cli/internal/profile"
 	"github.com/zarxor/cli/internal/render"
@@ -147,6 +148,37 @@ func TestToolsInstallWithoutScopePlansFullCatalog(t *testing.T) {
 	}
 	if len(adapter.calls) != 0 {
 		t.Fatalf("dry-run adapter mutations = %v, want none", adapter.calls)
+	}
+}
+
+func TestToolsInstallAutomaticallyAppliesServerProfile(t *testing.T) {
+	adapter := newFixtureAdapter()
+	service := &toolsService{
+		loadAdapter: func() (adapters.Adapter, error) { return adapter, nil },
+		detectHost: func() (host.Detection, error) {
+			return host.Detection{Role: host.Server, Reason: "fixture server"}, nil
+		},
+	}
+	var output bytes.Buffer
+	if err := service.Run(context.Background(), ToolsRequest{
+		Action:   install.Install,
+		Yes:      true,
+		DryRun:   true,
+		Writer:   &output,
+		Renderer: render.NewPlainRenderer(&output),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []tools.ToolID{
+		profile.Git, profile.GitHubCLI, profile.Docker, profile.DockerBuildx,
+		profile.DockerCompose, profile.NVM, profile.Node, profile.NPM,
+		profile.Corepack, profile.PNPM, profile.Yarn,
+	}
+	if got := adapter.detectedIDs(); !sameToolIDs(got, want) {
+		t.Fatalf("detected tool IDs = %v, want automatic server profile %v", got, want)
+	}
+	if !strings.Contains(output.String(), "Applied profiles: server") || !strings.Contains(output.String(), "auto-detected server") {
+		t.Fatalf("output = %q, want applied server profile and detection reason", output.String())
 	}
 }
 
@@ -483,6 +515,8 @@ func (a *fixtureAdapter) Verify(_ context.Context, tool tools.Tool) error {
 func fixtureService(adapter adapters.Adapter) ToolsService {
 	return &toolsService{loadAdapter: func() (adapters.Adapter, error) {
 		return adapter, nil
+	}, detectHost: func() (host.Detection, error) {
+		return host.Detection{Role: host.Desktop, Reason: "fixture host"}, nil
 	}}
 }
 

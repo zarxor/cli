@@ -155,29 +155,37 @@
         <div class="container">
           <div class="section-intro section-intro-dark">
             <div><h2 id="commands-title">Keep the plan visible.</h2></div>
-            <p>The command surface is small on purpose: install, update, narrow, or preview. Interactive by default; ready for automation when you need it.</p>
+            <p>The command surface is small on purpose: install, update, narrow, preview, or extend with Agent Skills. Interactive by default; ready for automation when you need it.</p>
           </div>
 
           <div class="command-layout">
             <div class="command-ledger">
               <article class="command-row command-row-featured">
-                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install</code><span class="command-tag">interactive</span></div><p>Open the supported catalog with every not-yet-installed eligible tool preselected. Installed tools remain visible with their detected version.</p></div>
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install</code><span class="command-tag">interactive</span></div><p>Detect whether the host is a desktop or server, apply the matching profile, then open the supported catalog with eligible tools preselected.</p></div>
                 <div class="inline-code code-block"><pre><code>jb tools install</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the tools install command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
               </article>
               <article class="command-row">
-                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools update</code><span class="command-tag">refresh</span></div><p>Discover live versions and show only installed tools with an available provider-owned update.</p></div>
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools update</code><span class="command-tag">refresh</span></div><p>Apply the detected desktop or server profile, discover live versions, and show only installed tools with an available update.</p></div>
                 <div class="inline-code code-block"><pre><code>jb tools update</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the tools update command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb skills install</code><span class="command-tag">extend</span></div><p>Choose scope and Codex or Claude destinations first, then select grouped skills from the explicit catalog.</p></div>
+                <div class="inline-code code-block"><pre><code>jb skills install</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the Agent Skills install command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb skills update</code><span class="command-tag">managed</span></div><p>Scan both scopes and supported harnesses with progress feedback, showing only bundles whose content has changed.</p></div>
+                <div class="inline-code code-block"><pre><code>jb skills update --dry-run</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the Agent Skills update command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
               </article>
               <article class="command-row">
                 <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb update</code><span class="command-tag">release</span></div><p>Download the latest CLI release, verify its checksum, and replace the installed binary.</p></div>
                 <div class="inline-code code-block"><pre><code>jb update</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the jb update command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
               </article>
               <article class="command-row">
-                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install --yes</code><span class="command-tag">automation</span></div><p>Install the complete supported catalog without selection or confirmation prompts.</p></div>
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install --yes</code><span class="command-tag">automation</span></div><p>Apply the detected profile and install its eligible tools without selection or confirmation prompts.</p></div>
                 <div class="inline-code code-block"><pre><code>jb tools install --yes</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the automated tools install command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
               </article>
               <article class="command-row">
-                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install --profiles=development</code><span class="command-tag">profile</span></div><p>Select the built-in development toolchain explicitly; shared dependencies are deduplicated before the plan.</p></div>
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install --profiles=development</code><span class="command-tag">profile</span></div><p>Select a built-in profile explicitly; desktop, server, and development profiles are available.</p></div>
                 <div class="inline-code code-block"><pre><code>jb tools install --profiles=development</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the development profile command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
               </article>
               <article class="command-row">
@@ -190,8 +198,8 @@
               <div class="preview-header"><span>PLAN OUTPUT</span><span>DRY RUN</span></div>
               <pre><code><span class="preview-muted">$ jb tools install --dry-run</span>
 
-<span class="preview-blue">• Checking installed tools</span>
-<span class="preview-blue">• Reading provider state</span>
+<span class="preview-blue">• Applied profiles: desktop (auto-detected desktop)</span>
+<span class="preview-blue">• Checking installed tools [##########----------] 6/13</span>
 <span class="preview-lime">• Plan ready — no changes made</span>
 
 <span class="preview-muted">Available to install</span>

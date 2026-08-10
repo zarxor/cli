@@ -12,27 +12,37 @@ import (
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/zarxor/cli/internal/tools"
 )
 
 type InteractiveSelection struct {
 	in      io.Reader
 	out     io.Writer
 	theme   Theme
+	title   string
 	runForm func(context.Context, *huh.Form) error
 }
 
 func NewInteractiveSelection(in io.Reader, out io.Writer, theme Theme) SelectionUI {
-	return newInteractiveSelection(in, out, theme, func(ctx context.Context, form *huh.Form) error {
+	return NewInteractiveSelectionWithTitle(in, out, theme, "tools")
+}
+
+// NewInteractiveSelectionWithTitle creates an interactive selector with a
+// resource-specific title.
+func NewInteractiveSelectionWithTitle(in io.Reader, out io.Writer, theme Theme, title string) SelectionUI {
+	return newInteractiveSelectionWithTitle(in, out, theme, func(ctx context.Context, form *huh.Form) error {
 		return form.RunWithContext(ctx)
-	})
+	}, title)
 }
 
 func newInteractiveSelection(in io.Reader, out io.Writer, theme Theme, runForm func(context.Context, *huh.Form) error) *InteractiveSelection {
-	return &InteractiveSelection{in: in, out: out, theme: theme, runForm: runForm}
+	return newInteractiveSelectionWithTitle(in, out, theme, runForm, "tools")
 }
 
-func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tools.ToolID, error) {
+func newInteractiveSelectionWithTitle(in io.Reader, out io.Writer, theme Theme, runForm func(context.Context, *huh.Form) error, title string) *InteractiveSelection {
+	return &InteractiveSelection{in: in, out: out, theme: theme, title: title, runForm: runForm}
+}
+
+func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]SelectionID, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -40,21 +50,26 @@ func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tool
 		return nil, nil
 	}
 
-	selected := make([]tools.ToolID, 0, len(items))
-	options := make([]huh.Option[tools.ToolID], 0, len(items))
+	selected := make([]SelectionID, 0, len(items))
+	options := make([]huh.Option[SelectionID], 0, len(items))
 	for _, item := range items {
 		label := item.Label
 		if label == "" {
-			label = item.Tool.Name
+			label = itemName(item)
 		}
-		options = append(options, huh.NewOption(label, item.Tool.ID).Selected(item.Selected && !item.Disabled))
+		id := itemID(item)
+		options = append(options, huh.NewOption(label, id).Selected(item.Selected && !item.Disabled))
 		if item.Selected && !item.Disabled {
-			selected = append(selected, item.Tool.ID)
+			selected = append(selected, id)
 		}
 	}
 
-	multiSelect := huh.NewMultiSelect[tools.ToolID]().
-		Title("Select tools").
+	title := s.title
+	if title == "" {
+		title = "tools"
+	}
+	multiSelect := huh.NewMultiSelect[SelectionID]().
+		Title("Select " + title).
 		Description("↑/↓ move   Space toggle   Enter continue   Esc cancel").
 		Options(options...).
 		Value(&selected).
@@ -71,18 +86,21 @@ func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tool
 
 	field := &interactiveField{
 		MultiSelect: multiSelect,
-		labels:      make(map[tools.ToolID]string, len(items)),
-		disabled:    make(map[tools.ToolID]bool, len(items)),
+		labels:      make(map[SelectionID]string, len(items)),
+		groups:      make(map[SelectionID]string, len(items)),
+		disabled:    make(map[SelectionID]bool, len(items)),
 		toggle:      keys.MultiSelect.Toggle,
 		bulkToggle:  keys.MultiSelect.SelectAll,
 		theme:       s.theme,
 	}
 	for _, item := range items {
-		field.labels[item.Tool.ID] = item.Label
-		if field.labels[item.Tool.ID] == "" {
-			field.labels[item.Tool.ID] = item.Tool.Name
+		id := itemID(item)
+		field.labels[id] = item.Label
+		if field.labels[id] == "" {
+			field.labels[id] = itemName(item)
 		}
-		field.disabled[item.Tool.ID] = item.Disabled
+		field.groups[id] = item.Group
+		field.disabled[id] = item.Disabled
 		field.hasDisabled = field.hasDisabled || item.Disabled
 	}
 
@@ -103,17 +121,18 @@ func (s *InteractiveSelection) Select(ctx context.Context, items []Item) ([]tool
 		return nil, fmt.Errorf("interactive selection: %w", err)
 	}
 
-	selectedSet := make(map[tools.ToolID]struct{}, len(selected))
+	selectedSet := make(map[SelectionID]struct{}, len(selected))
 	for _, id := range selected {
 		selectedSet[id] = struct{}{}
 	}
-	ordered := make([]tools.ToolID, 0, len(selectedSet))
+	ordered := make([]SelectionID, 0, len(selectedSet))
 	for _, item := range items {
 		if item.Disabled {
 			continue
 		}
-		if _, ok := selectedSet[item.Tool.ID]; ok {
-			ordered = append(ordered, item.Tool.ID)
+		id := itemID(item)
+		if _, ok := selectedSet[id]; ok {
+			ordered = append(ordered, id)
 		}
 	}
 	return ordered, nil
@@ -143,9 +162,10 @@ func interactiveStartupUnavailable(err error) bool {
 var _ SelectionUI = (*InteractiveSelection)(nil)
 
 type interactiveField struct {
-	*huh.MultiSelect[tools.ToolID]
-	labels      map[tools.ToolID]string
-	disabled    map[tools.ToolID]bool
+	*huh.MultiSelect[SelectionID]
+	labels      map[SelectionID]string
+	groups      map[SelectionID]string
+	disabled    map[SelectionID]bool
 	toggle      key.Binding
 	bulkToggle  key.Binding
 	theme       Theme
@@ -164,13 +184,13 @@ func (f *interactiveField) Update(msg tea.Msg) (huh.Model, tea.Cmd) {
 		}
 	}
 	updated, command := f.MultiSelect.Update(msg)
-	f.MultiSelect = updated.(*huh.MultiSelect[tools.ToolID])
+	f.MultiSelect = updated.(*huh.MultiSelect[SelectionID])
 	return f, command
 }
 
 func (f *interactiveField) View() string {
 	view := grayDisabledRows(f.MultiSelect.View(), f.labels, f.disabled, f.theme)
-	view = groupSelectionRows(view, f.labels, f.disabled, f.theme)
+	view = groupSelectionRowsWithCreators(view, f.labels, f.groups, f.disabled, f.theme)
 	hovered, ok := f.MultiSelect.Hovered()
 	if !ok || f.disabled[hovered] {
 		return view
@@ -178,38 +198,60 @@ func (f *interactiveField) View() string {
 	return boldActiveLabel(view, f.labels[hovered])
 }
 
-func groupSelectionRows(view string, labels map[tools.ToolID]string, disabled map[tools.ToolID]bool, theme Theme) string {
+func groupSelectionRows(view string, labels map[SelectionID]string, disabled map[SelectionID]bool, theme Theme) string {
+	return groupSelectionRowsWithCreators(view, labels, nil, disabled, theme)
+}
+
+func groupSelectionRowsWithCreators(view string, labels map[SelectionID]string, groups map[SelectionID]string, disabled map[SelectionID]bool, theme Theme) string {
 	lines := strings.Split(view, "\n")
 	grouped := make([]string, 0, len(lines)+3)
-	availableHeading := false
-	installedHeading := false
+	section := ""
+	creator := ""
 	for _, line := range lines {
-		isRow, isDisabled := selectionRow(ansi.Strip(line), labels, disabled)
-		if isRow && isDisabled && !installedHeading {
-			if len(grouped) > 0 {
-				grouped = append(grouped, "")
+		id, isRow, isDisabled := selectionRow(ansi.Strip(line), labels, disabled)
+		if isRow {
+			currentSection := "available"
+			if isDisabled {
+				currentSection = "installed"
 			}
-			grouped = append(grouped, theme.Muted("Already installed"))
-			installedHeading = true
-		} else if isRow && !isDisabled && !availableHeading {
-			grouped = append(grouped, theme.Accent("Available to install"))
-			availableHeading = true
+			if currentSection != section {
+				if len(grouped) > 0 {
+					grouped = append(grouped, "")
+				}
+				if isDisabled {
+					grouped = append(grouped, theme.Muted("Already installed"))
+				} else {
+					grouped = append(grouped, theme.Accent("Available to install"))
+				}
+				section = currentSection
+				creator = ""
+			}
+			currentCreator := groups[id]
+			if currentCreator != "" && currentCreator != creator {
+				if creator != "" {
+					grouped = append(grouped, "")
+				}
+				grouped = append(grouped, theme.Accent(currentCreator))
+				creator = currentCreator
+			} else if currentCreator == "" {
+				creator = ""
+			}
 		}
 		grouped = append(grouped, line)
 	}
 	return strings.Join(grouped, "\n")
 }
 
-func selectionRow(line string, labels map[tools.ToolID]string, disabled map[tools.ToolID]bool) (bool, bool) {
+func selectionRow(line string, labels map[SelectionID]string, disabled map[SelectionID]bool) (SelectionID, bool, bool) {
 	for id, label := range labels {
 		if strings.Contains(line, label) {
-			return true, disabled[id]
+			return id, true, disabled[id]
 		}
 	}
-	return false, false
+	return "", false, false
 }
 
-func grayDisabledRows(view string, labels map[tools.ToolID]string, disabled map[tools.ToolID]bool, theme Theme) string {
+func grayDisabledRows(view string, labels map[SelectionID]string, disabled map[SelectionID]bool, theme Theme) string {
 	lines := strings.Split(view, "\n")
 	for index, line := range lines {
 		plain := ansi.Strip(line)

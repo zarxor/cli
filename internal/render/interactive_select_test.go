@@ -176,6 +176,32 @@ func TestInteractiveRowsGroupAvailableBeforeInstalled(t *testing.T) {
 	}
 }
 
+func TestInteractiveRowsGroupByCreator(t *testing.T) {
+	theme := NewTheme(ThemeOptions{Mode: ColorAlways, Dark: true})
+	view := "❯ [✓] code-review\n  [✓] tdd\n  [✓] impeccable"
+	labels := map[tools.ToolID]string{
+		profile.Git:  "code-review",
+		profile.Bun:  "tdd",
+		profile.Node: "impeccable",
+	}
+	groups := map[tools.ToolID]string{
+		profile.Git:  "Matt Pocock",
+		profile.Bun:  "Matt Pocock",
+		profile.Node: "Paul Bakaus",
+	}
+
+	got := groupSelectionRowsWithCreators(view, labels, groups, map[tools.ToolID]bool{}, theme)
+	plain := stripANSI(got)
+	for _, want := range []string{"Matt Pocock", "code-review", "tdd", "Paul Bakaus", "impeccable"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("grouped rows = %q, want %q", plain, want)
+		}
+	}
+	if strings.Index(plain, "Matt Pocock") > strings.Index(plain, "Paul Bakaus") {
+		t.Fatalf("grouped rows = %q, want creator order", plain)
+	}
+}
+
 func selectionFixtureItems() []Item {
 	return []Item{
 		{Tool: tools.Tool{ID: profile.Git, Name: "Git"}, Label: "Git", Selected: true},

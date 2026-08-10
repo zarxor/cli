@@ -78,6 +78,28 @@ func TestNumberedSelectionGroupsAvailableAndInstalledItems(t *testing.T) {
 	}
 }
 
+func TestNumberedSelectionGroupsItemsByCreator(t *testing.T) {
+	var output bytes.Buffer
+	selection := render.NewNumberedSelection(strings.NewReader("\n"), &output)
+	items := []render.Item{
+		{Tool: tools.Tool{ID: profile.Git, Name: "code-review"}, Group: "Matt Pocock", Label: "code-review", Selected: true},
+		{Tool: tools.Tool{ID: profile.Bun, Name: "tdd"}, Group: "Matt Pocock", Label: "tdd", Selected: true},
+		{Tool: tools.Tool{ID: profile.Node, Name: "impeccable"}, Group: "Paul Bakaus", Label: "impeccable", Selected: true},
+	}
+	if _, err := selection.Select(context.Background(), items); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	for _, want := range []string{"Matt Pocock", "code-review", "tdd", "Paul Bakaus", "impeccable"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("selection output %q does not contain creator group or skill %q", got, want)
+		}
+	}
+	if strings.Index(got, "Matt Pocock") > strings.Index(got, "Paul Bakaus") {
+		t.Fatalf("selection output = %q, want catalog creator order", got)
+	}
+}
+
 func TestNumberedSelectionRejectsClosedInput(t *testing.T) {
 	items := []render.Item{{Tool: tools.Tool{ID: profile.Git}, Selected: true}}
 	for _, input := range []string{"", "1"} {

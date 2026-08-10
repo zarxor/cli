@@ -32,18 +32,23 @@ func newRootCommand(services ...ToolsService) *cobra.Command {
 	if len(services) > 0 {
 		service = services[0]
 	}
-	return newRootCommandWithTheme(service, func(cmd *cobra.Command) render.Theme {
+	return newRootCommandWithServices(service, newLiveSkillsService(), func(cmd *cobra.Command) render.Theme {
 		return render.AutoTheme(cmd.InOrStdin(), cmd.OutOrStdout(), os.Environ())
 	})
 }
 
 func newRootCommandWithTheme(service ToolsService, themeFor themeFactory) *cobra.Command {
+	return newRootCommandWithServices(service, newLiveSkillsService(), themeFor)
+}
+
+func newRootCommandWithServices(service ToolsService, skillsService SkillsService, themeFor themeFactory) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "jb",
 		Short: "Johan Bostrom CLI",
 	}
 	root.AddCommand(
 		newToolsCommand(service),
+		newSkillsCommand(skillsService),
 		newUpdateCommand(themeFor),
 		newVersionCommand(themeFor),
 	)

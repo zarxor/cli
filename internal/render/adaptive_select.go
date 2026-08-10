@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-
-	"github.com/zarxor/cli/internal/tools"
 )
 
 type AdaptiveSelection struct {
@@ -15,10 +13,17 @@ type AdaptiveSelection struct {
 }
 
 func NewAdaptiveSelection(in io.Reader, out io.Writer, theme Theme) SelectionUI {
+	return NewAdaptiveSelectionWithTitle(in, out, theme, "tools")
+}
+
+// NewAdaptiveSelectionWithTitle creates the same terminal-aware selector as
+// NewAdaptiveSelection, with a resource-specific title for the interactive
+// presentation.
+func NewAdaptiveSelectionWithTitle(in io.Reader, out io.Writer, theme Theme, title string) SelectionUI {
 	inputTTY, outputTTY := streamsAreTerminal(in, out)
 	return newAdaptiveSelection(
 		inputTTY && outputTTY,
-		NewInteractiveSelection(in, out, theme),
+		NewInteractiveSelectionWithTitle(in, out, theme, title),
 		NewNumberedSelection(in, out),
 	)
 }
@@ -27,7 +32,7 @@ func newAdaptiveSelection(terminal bool, interactive, fallback SelectionUI) Sele
 	return &AdaptiveSelection{terminal: terminal, interactive: interactive, fallback: fallback}
 }
 
-func (s *AdaptiveSelection) Select(ctx context.Context, items []Item) ([]tools.ToolID, error) {
+func (s *AdaptiveSelection) Select(ctx context.Context, items []Item) ([]SelectionID, error) {
 	if !s.terminal {
 		return s.fallback.Select(ctx, items)
 	}

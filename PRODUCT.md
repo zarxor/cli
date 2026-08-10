@@ -14,7 +14,7 @@ Developers setting up or refreshing a development machine, plus maintainers who 
 
 ## Product Purpose
 
-Johan Bostrom CLI (`jb`) installs and updates a curated development toolchain from a standalone binary. The site helps a visitor understand what `jb` does, install it safely, and find the most useful commands quickly.
+Johan Bostrom CLI (`jb`) installs and updates a curated development toolchain from a standalone binary and manages portable Agent Skills for supported AI clients. The site helps a visitor understand what `jb` does, install it safely, and find the most useful commands quickly.
 
 ## Positioning
 
@@ -22,7 +22,7 @@ Johan Bostrom CLI (`jb`) installs and updates a curated development toolchain fr
 
 ## Operating Context
 
-Visitors arrive from a shell or repository context, choose a platform, copy a one-line installer or review the bootstrap script, then use `jb tools install`, `jb tools update`, or `jb update` in a terminal.
+Visitors arrive from a shell or repository context, choose a platform, copy a one-line installer or review the bootstrap script, then use `jb tools install`, `jb tools update`, `jb skills install`, or `jb update` in a terminal.
 
 ## Capabilities and Constraints
 
@@ -30,6 +30,8 @@ Visitors arrive from a shell or repository context, choose a platform, copy a on
 - It must keep commands, supported platforms, installer URLs, and release behavior accurate.
 - Linux support covers Debian/Ubuntu and Arch Linux; Windows support uses PowerShell.
 - macOS support is planned, not currently available.
+- When no explicit tool scope is supplied, `jb` classifies the host as desktop or server, applies the matching built-in profile, and shows the applied profile and detection reason before planning.
+- Agent Skills are exposed through an explicit available-skills catalog, then installed and updated with the same selection and progress model as tools; installs choose scope and supported harnesses before skill selection, default to global scope and Codex plus Claude, and do not accept arbitrary command-line sources.
 - Copy buttons must keep commands available as selectable plain text and remain keyboard accessible.
 
 ## Brand Commitments

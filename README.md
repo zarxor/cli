@@ -113,6 +113,8 @@ toolchain and can still be selected explicitly:
 
 ```text
 jb tools install --profiles=development
+jb tools install --profiles=desktop
+jb tools install --profiles=server
 ```
 
 Profiles are built into `jb` and are never written to disk. Multiple profiles
@@ -122,9 +124,21 @@ are supplied as a comma-separated list:
 jb tools install --profiles=<name>[,<name>...]
 ```
 
-The initial profile name is `development`; the syntax is ready for more built-in
-profiles later. Tools and dependencies shared by multiple profiles are
-deduplicated by stable tool ID before the plan is shown or executed.
+When neither `--profiles` nor `--only` is supplied, `jb` detects the host shape
+and applies one automatic profile before planning. A regular desktop applies
+`desktop`, which contains the local development toolchain. A headless host
+applies `server`, which contains Git, GitHub CLI, Docker, and Node.js with its
+runtime dependencies. The CLI prints the applied profile and the detection
+reason before checking installed tools:
+
+```text
+• Applied profiles: desktop (auto-detected desktop: active graphical session detected)
+```
+
+The explicit `--profiles` flag overrides automatic selection. `--only` skips
+profiles and directly selects the named tools. Tools and dependencies shared by
+multiple profiles are deduplicated by stable tool ID before the plan is shown
+or executed. Built-in profile names are `development`, `desktop`, and `server`.
 
 Use `--only` to narrow a profile to the tools you want to manage. Dependencies
 needed by a narrowed tool are still added automatically:
@@ -140,6 +154,80 @@ dependencies are still added):
 ```text
 jb tools install --only=git,bun
 ```
+
+## Install Agent Skills
+
+Agent Skills are portable capability bundles centered on a `SKILL.md` file.
+`jb` exposes only the skills explicitly listed in its available-skills catalog;
+it does not treat arbitrary internet sources as install choices:
+
+```text
+jb skills install
+```
+
+The install flow matches `jb tools install`: before the skill list appears, `jb`
+asks for an installation scope and the AI harnesses that should receive the
+skills. Global scope and both Codex and Claude harnesses are the defaults;
+not-yet-installed destinations are selected by default. The
+catalog currently includes the stable skills from [Matt Pocock's skills
+repository](https://github.com/mattpocock/skills) and the `impeccable` skill
+from [Impeccable](https://github.com/pbakaus/impeccable). Use `--only` to
+narrow the catalog, `--yes` to select every eligible skill without prompting,
+or `--dry-run` to preview the plan:
+
+The interactive catalog is grouped by creator, so the Matt Pocock collection
+and Impeccable appear as separate sections. Installation checks exactly the
+selected scope × harness combination; it cannot prove that an unknown AI
+harness elsewhere on the machine has or does not have the same skill. Existing
+unmanaged directories at the selected destination are protected from overwrite.
+
+```text
+jb skills install --only=<skill-id>[,<skill-id>...]
+jb skills install --yes
+jb skills install --dry-run
+```
+
+Global scope is the default. In an interactive run, the scope prompt appears
+before the skill list, and pressing Enter keeps Global. Use project scope when
+the skills should be available only in the current repository. The same setup
+step lets you choose Codex, Claude, or both harnesses:
+
+```text
+jb skills install --scope=global
+jb skills install --scope=project
+jb skills install --harnesses=codex
+jb skills install --scope=project --harnesses=codex,claude
+```
+
+Global Codex skills are installed in the user Codex skills directory and global
+Claude skills in the user `.claude/skills` directory. Project Codex skills use
+`.agents/skills`; project Claude skills use `.claude/skills`. The command line
+never accepts an arbitrary source argument. Catalog entries own their source
+and every catalog source must contain a valid
+`SKILL.md` with lowercase, hyphenated `name` and a `description`.
+For Impeccable, the catalog entry installs its Agent Skill bundle; upstream
+provider-specific hooks and CLI/plugin assets are not installed by `jb`.
+
+Managed skills record their catalog source and content digest in a lock
+manifest. `jb skills update` checks both global and project installations for
+both supported harnesses by default, shows progress without printing names
+during discovery, and presents only skills whose source content changed. Use
+`--harnesses=codex` or `--harnesses=claude` to limit the update scan. Selecting
+a skill updates every managed scope and harness where it is installed:
+
+```text
+jb skills update
+jb skills update --yes
+jb skills update --dry-run
+jb skills list
+jb skills info <name>
+jb skills verify
+jb skills doctor
+jb skills remove <name> --yes
+```
+
+Installation never runs scripts bundled with a skill, and existing unmanaged
+skill directories are not overwritten.
 
 ## Update `jb` itself
 
@@ -171,9 +259,9 @@ hidden service.
 Use `jb tools update --yes` for non-interactive updates or `jb tools update
 --dry-run` to inspect the plan without changing anything.
 
-Updates without `--profiles` scan the complete supported catalog. Supplying a
-profile limits discovery to that profile, while `--only` narrows the profile
-and retains dependencies:
+Updates without `--profiles` or `--only` apply the same automatic desktop/server
+profile detection as installation. Supplying a profile limits discovery to
+that profile, while `--only` directly limits the live scan to the listed tools:
 
 ```text
 jb tools update --profiles=development

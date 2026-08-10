@@ -270,7 +270,7 @@ func selectionItems(action Action, statuses []ToolStatus) []Item {
 		} else if action == Update {
 			label = fmt.Sprintf("%s (%s -> %s)", status.Tool.Name, versionLabel(status.CurrentVersion), versionLabel(status.CandidateVersion))
 		}
-		item := Item{Tool: status.Tool, Label: label, Selected: !disabled, Disabled: disabled}
+		item := Item{Tool: status.Tool, ID: render.SelectionID(status.Tool.ID), Name: status.Tool.Name, Label: label, Selected: !disabled, Disabled: disabled}
 		if disabled {
 			installed = append(installed, item)
 		} else {
@@ -301,20 +301,24 @@ func renderResult(renderer *render.Renderer, result ToolResult) error {
 	})
 }
 
-func itemIDs(items []Item) []tools.ToolID {
-	ids := make([]tools.ToolID, 0, len(items))
+func itemIDs(items []Item) []render.SelectionID {
+	ids := make([]render.SelectionID, 0, len(items))
 	for _, item := range items {
 		if item.Selected && !item.Disabled {
-			ids = append(ids, item.Tool.ID)
+			id := item.ID
+			if id == "" {
+				id = render.SelectionID(item.Tool.ID)
+			}
+			ids = append(ids, id)
 		}
 	}
 	return ids
 }
 
-func selectStatuses(action Action, statuses []ToolStatus, ids []tools.ToolID) []ToolStatus {
+func selectStatuses(action Action, statuses []ToolStatus, ids []render.SelectionID) []ToolStatus {
 	selected := make(map[tools.ToolID]struct{}, len(ids))
 	for _, id := range ids {
-		selected[id] = struct{}{}
+		selected[tools.ToolID(id)] = struct{}{}
 	}
 	result := make([]ToolStatus, 0, len(selected))
 	for _, status := range statuses {

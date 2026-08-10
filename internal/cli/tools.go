@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zarxor/cli/internal/adapters"
 	"github.com/zarxor/cli/internal/detect"
+	"github.com/zarxor/cli/internal/host"
 	"github.com/zarxor/cli/internal/install"
 	"github.com/zarxor/cli/internal/plan"
 	"github.com/zarxor/cli/internal/platform"
@@ -43,6 +44,7 @@ type ToolsService interface {
 
 type toolsService struct {
 	loadAdapter func() (adapters.Adapter, error)
+	detectHost  func() (host.Detection, error)
 }
 
 func newToolsCommand(service ToolsService) *cobra.Command {
@@ -126,7 +128,7 @@ func titleAction(action install.Action) string {
 }
 
 func (s *toolsService) Run(ctx context.Context, request ToolsRequest) error {
-	profiles, err := profile.ResolveProfiles(request.ProfileNames)
+	profiles, appliedProfiles, detection, err := s.resolveProfiles(request)
 	if err != nil {
 		return err
 	}
@@ -143,6 +145,9 @@ func (s *toolsService) Run(ctx context.Context, request ToolsRequest) error {
 	renderer := request.Renderer
 	if renderer == nil {
 		renderer = render.NewPlainRenderer(request.Writer)
+	}
+	if err := renderAppliedProfiles(renderer, appliedProfiles, detection, len(request.Only) > 0 && len(appliedProfiles) == 0); err != nil {
+		return fmt.Errorf("render applied profiles: %w", err)
 	}
 	if err := renderer.ProgressBar("Checking installed tools", 0, len(planned)); err != nil {
 		return fmt.Errorf("render discovery progress: %w", err)
@@ -176,6 +181,58 @@ func (s *toolsService) Run(ctx context.Context, request ToolsRequest) error {
 		}
 	}
 	return fmt.Errorf("tools %s failed", request.Action)
+}
+
+func (s *toolsService) resolveProfiles(request ToolsRequest) ([]profile.Profile, []profile.ProfileName, *host.Detection, error) {
+	if len(request.ProfileNames) > 0 {
+		profiles, err := profile.ResolveProfiles(request.ProfileNames)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		applied := make([]profile.ProfileName, 0, len(request.ProfileNames))
+		for _, name := range request.ProfileNames {
+			applied = append(applied, profile.ProfileName(name))
+		}
+		return profiles, applied, nil, nil
+	}
+	if len(request.Only) > 0 {
+		return nil, nil, nil, nil
+	}
+
+	detectHost := s.detectHost
+	if detectHost == nil {
+		detectHost = host.Detect
+	}
+	detection, err := detectHost()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("detect host role: %w", err)
+	}
+	profileName := profile.Desktop
+	if detection.Role == host.Server {
+		profileName = profile.Server
+	}
+	profiles, err := profile.ResolveProfiles([]string{string(profileName)})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return profiles, []profile.ProfileName{profileName}, &detection, nil
+}
+
+func renderAppliedProfiles(renderer *render.Renderer, profiles []profile.ProfileName, detection *host.Detection, explicitTools bool) error {
+	message := "Applied profiles: none"
+	if len(profiles) > 0 {
+		names := make([]string, 0, len(profiles))
+		for _, name := range profiles {
+			names = append(names, string(name))
+		}
+		message = "Applied profiles: " + strings.Join(names, ", ")
+		if detection != nil {
+			message += " (auto-detected " + string(detection.Role) + ": " + detection.Reason + ")"
+		}
+	} else if explicitTools {
+		message += " (explicit tool selection)"
+	}
+	return renderer.Progress(message)
 }
 
 // Detection is mostly command and network I/O. Keep it bounded so a full
@@ -275,7 +332,7 @@ func requestedTools(action install.Action, profiles []profile.Profile, only []to
 }
 
 func newLiveToolsService() ToolsService {
-	return &toolsService{loadAdapter: loadLiveAdapter}
+	return &toolsService{loadAdapter: loadLiveAdapter, detectHost: host.Detect}
 }
 
 func loadLiveAdapter() (adapters.Adapter, error) {
