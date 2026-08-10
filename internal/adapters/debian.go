@@ -744,7 +744,28 @@ func (a linuxAdapter) runNVMExecutable(ctx context.Context, executable string, a
 
 func (a linuxAdapter) runNVMExecutableCommand(ctx context.Context, executable string, args ...string) (runner.Result, error) {
 	nvmExec := filepath.Join(a.config.Home, ".nvm", "nvm-exec")
-	return a.runUserCommand(ctx, []string{"NVM_DIR=" + filepath.Join(a.config.Home, ".nvm"), "NODE_VERSION=lts/*"}, nvmExec, append([]string{executable}, args...)...)
+	return a.runUserCommand(ctx, a.nvmExecutableEnvironment(executable), nvmExec, append([]string{executable}, args...)...)
+}
+
+func (a linuxAdapter) nvmExecutableEnvironment(executable string) []string {
+	environment := []string{"NVM_DIR=" + filepath.Join(a.config.Home, ".nvm"), "NODE_VERSION=lts/*"}
+	switch executable {
+	case "corepack", "pnpm", "yarn":
+		// Corepack shims inspect the nearest package.json. These invocations manage
+		// host tools, so a project's packageManager field must not affect them.
+		environment = append(environment, "COREPACK_ENABLE_PROJECT_SPEC=0")
+	}
+	return environment
+}
+
+func (a linuxAdapter) nvmExecutableVersionArgs(executable string) []string {
+	if executable == "pnpm" {
+		// pnpm performs its own project package-manager check after Corepack
+		// selects the binary, so keep the version probe outside the caller's
+		// project as well.
+		return []string{"--dir", a.config.TempDir, "--version"}
+	}
+	return []string{"--version"}
 }
 
 func (a linuxAdapter) detectNVM(ctx context.Context) (detect.Detection, error) {
@@ -764,7 +785,7 @@ func (a linuxAdapter) detectNVMExecutable(ctx context.Context, executable string
 	if _, err := a.runner.LookPath(ctx, nvmExec); err != nil {
 		return detect.Detection{Installed: false}, nil
 	}
-	result, err := a.runUserCommand(ctx, []string{"NVM_DIR=" + filepath.Join(a.config.Home, ".nvm"), "NODE_VERSION=lts/*"}, nvmExec, executable, "--version")
+	result, err := a.runNVMExecutableCommand(ctx, executable, a.nvmExecutableVersionArgs(executable)...)
 	if err != nil {
 		if expectedMissingComponentExecutable(executable, result) {
 			return detect.Detection{Installed: false}, nil

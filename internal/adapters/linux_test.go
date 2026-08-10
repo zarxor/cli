@@ -457,11 +457,12 @@ func TestDebianPreservesGenuineDockerDetectionFailure(t *testing.T) {
 func TestLinuxTreatsMissingNVMManagedComponentAsAbsent(t *testing.T) {
 	fixture := runner.NewFixture()
 	home := t.TempDir()
+	temp := t.TempDir()
 	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
 	fixture.LookPaths[nvmExec] = nvmExec
-	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "pnpm", "--version"}
+	args := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", "COREPACK_ENABLE_PROJECT_SPEC=0", nvmExec, "pnpm", "--dir", temp, "--version"}
 	fixture.Set("env", args, runner.Result{Stderr: nvmExec + ": line 20: exec: pnpm: not found\n", ExitCode: 127}, errors.New("exit status 127"))
-	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: temp})
 
 	got, err := adapter.Detect(context.Background(), mustTool(t, profile.PNPM))
 	if err != nil {
@@ -469,6 +470,30 @@ func TestLinuxTreatsMissingNVMManagedComponentAsAbsent(t *testing.T) {
 	}
 	if got.Installed {
 		t.Fatalf("Detect() = %#v, want absent pnpm", got)
+	}
+}
+
+func TestLinuxNVMManagedPackageManagerProbeIgnoresProjectPackageManager(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	temp := t.TempDir()
+	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+	fixture.LookPaths[nvmExec] = nvmExec
+	legacyArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "pnpm", "--version"}
+	fixture.Set("env", legacyArgs, runner.Result{
+		Stderr:   "Unsupported package manager specification (bun@1.3.0)\n",
+		ExitCode: 1,
+	}, errors.New("exit status 1"))
+	isolatedArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", "COREPACK_ENABLE_PROJECT_SPEC=0", nvmExec, "pnpm", "--dir", temp, "--version"}
+	fixture.Set("env", isolatedArgs, runner.Result{Stdout: "10.0.0\n"}, nil)
+	adapter := NewArchAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: temp})
+
+	got, err := adapter.Detect(context.Background(), mustTool(t, profile.PNPM))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (detect.Detection{Installed: true, Current: "10.0.0"}) {
+		t.Fatalf("Detect() = %#v, want installed pnpm after bypassing project package-manager metadata", got)
 	}
 }
 
@@ -564,6 +589,7 @@ func TestLinuxBrokenPresentExecutablesRemainDetectionErrors(t *testing.T) {
 
 func TestLinuxDetectsCandidatesForInstalledUserTools(t *testing.T) {
 	home := t.TempDir()
+	temp := t.TempDir()
 	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
 	fixture := runner.NewFixture()
 	fixture.LookPaths[nvmExec] = nvmExec
@@ -576,14 +602,14 @@ func TestLinuxDetectsCandidatesForInstalledUserTools(t *testing.T) {
 	}
 	for id, packageName := range packages {
 		executable, _ := nvmExecutable(id)
-		currentArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, executable, "--version"}
+		currentArgs := nvmExecutableArgs(home, nvmExec, temp, executable, "--version")
 		fixture.Set("env", currentArgs, runner.Result{Stdout: "1.0.0\n"}, nil)
 		candidateArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "view", packageName, "version"}
 		fixture.Set("env", candidateArgs, runner.Result{Stdout: "2.0.0\n"}, nil)
 	}
 	fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "node", "--version"}, runner.Result{Stdout: "v22.0.0\n"}, nil)
 
-	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: temp})
 	cases := []struct {
 		id   profile.ToolID
 		want string
@@ -631,12 +657,13 @@ func TestLinuxCandidateLookupFailuresPreserveSuccessfulDetection(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			home := t.TempDir()
+			temp := t.TempDir()
 			nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
 			fixture := runner.NewFixture()
 			fixture.LookPaths[nvmExec] = nvmExec
-			fixture.Set("env", []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, test.executable, "--version"}, runner.Result{Stdout: test.current + "\n"}, nil)
+			fixture.Set("env", nvmExecutableArgs(home, nvmExec, temp, test.executable, "--version"), runner.Result{Stdout: test.current + "\n"}, nil)
 			test.setCandidate(fixture, nvmExec)
-			adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+			adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: temp})
 
 			got, err := adapter.Detect(context.Background(), mustTool(t, test.id))
 			if err != nil {
@@ -949,6 +976,18 @@ type fixtureExitError struct{ status int }
 
 func (e *fixtureExitError) Error() string { return "fixture installer failed" }
 func (e *fixtureExitError) ExitCode() int { return e.status }
+
+func nvmExecutableArgs(home, nvmExec, tempDir, executable string, args ...string) []string {
+	commandArgs := []string{"HOME=" + home, "NVM_DIR=" + filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*"}
+	if executable == "corepack" || executable == "pnpm" || executable == "yarn" {
+		commandArgs = append(commandArgs, "COREPACK_ENABLE_PROJECT_SPEC=0")
+	}
+	commandArgs = append(commandArgs, nvmExec, executable)
+	if executable == "pnpm" {
+		commandArgs = append(commandArgs, "--dir", tempDir)
+	}
+	return append(commandArgs, args...)
+}
 
 func mustTool(t *testing.T, id profile.ToolID) tools.Tool {
 	t.Helper()
