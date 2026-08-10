@@ -425,7 +425,7 @@ func (a *WindowsAdapter) installUserTool(ctx context.Context, tool tools.Tool) e
 		return a.runResolved(ctx, "npm", "install", "--global", "@openai/codex@latest")
 	case profile.Bun:
 		// Bun downloads its native runtime from the npm package's postinstall.
-		return a.runResolved(ctx, "npm", "install", "--global", "--ignore-scripts=false", "bun@latest")
+		return a.runResolved(ctx, "npm", "install", "--global", "--ignore-scripts=false", "--bin-links=true", "bun@latest")
 	default:
 		return a.unsupported(tool)
 	}
@@ -434,7 +434,7 @@ func (a *WindowsAdapter) installUserTool(ctx context.Context, tool tools.Tool) e
 func (a *WindowsAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error {
 	switch tool.ID {
 	case profile.Bun:
-		return a.runResolved(ctx, "npm", "install", "--global", "--ignore-scripts=false", "bun@latest")
+		return a.runResolved(ctx, "npm", "install", "--global", "--ignore-scripts=false", "--bin-links=true", "bun@latest")
 	case profile.Node:
 		return a.runNVM(ctx)
 	default:

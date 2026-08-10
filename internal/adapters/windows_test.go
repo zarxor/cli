@@ -599,7 +599,7 @@ func TestWindowsUsesElevationOnlyForSystemChanges(t *testing.T) {
 		t.Fatalf("user installers used elevation: %#v", elevation.commands)
 	}
 	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "@openai/codex@latest")
-	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "--ignore-scripts=false", "bun@latest")
+	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "--ignore-scripts=false", "--bin-links=true", "bun@latest")
 	for _, command := range fixture.Commands {
 		if command.Command == "bash" || command.Command == "sh" || command.Command == "nvm" {
 			t.Fatalf("Windows adapter invoked a Linux command: %#v", command)

@@ -619,7 +619,9 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 		return a.runNVMExecutable(ctx, "corepack", "prepare", "yarn@stable", "--activate")
 	case profile.Bun:
 		// Bun downloads its native runtime from the npm package's postinstall.
-		return a.runNVMExecutable(ctx, "npm", "install", "--global", "--ignore-scripts=false", "bun@latest")
+		// Explicitly create global bin links even when npm was configured with
+		// bin-links=false; nvm-exec discovers Bun through that global link.
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "--ignore-scripts=false", "--bin-links=true", "bun@latest")
 	default:
 		return fmt.Errorf("unsupported tool %q", tool.ID)
 	}
@@ -628,7 +630,7 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 func (a linuxAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error {
 	switch tool.ID {
 	case profile.Bun:
-		return a.runNVMExecutable(ctx, "npm", "install", "--global", "--ignore-scripts=false", "bun@latest")
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "--ignore-scripts=false", "--bin-links=true", "bun@latest")
 	case profile.NVM:
 		version, err := a.latestNVMVersion(ctx)
 		if err != nil {
