@@ -618,10 +618,7 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 	case profile.Yarn:
 		return a.runNVMExecutable(ctx, "corepack", "prepare", "yarn@stable", "--activate")
 	case profile.Bun:
-		// Bun downloads its native runtime from the npm package's postinstall.
-		// Explicitly create global bin links even when npm was configured with
-		// bin-links=false; nvm-exec discovers Bun through that global link.
-		return a.runNVMExecutable(ctx, "npm", "install", "--global", "--ignore-scripts=false", "--bin-links=true", "bun@latest")
+		return a.installBun(ctx)
 	default:
 		return fmt.Errorf("unsupported tool %q", tool.ID)
 	}
@@ -630,7 +627,7 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 func (a linuxAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error {
 	switch tool.ID {
 	case profile.Bun:
-		return a.runNVMExecutable(ctx, "npm", "install", "--global", "--ignore-scripts=false", "--bin-links=true", "bun@latest")
+		return a.installBun(ctx)
 	case profile.NVM:
 		version, err := a.latestNVMVersion(ctx)
 		if err != nil {
@@ -642,6 +639,29 @@ func (a linuxAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error
 	default:
 		return a.installUserTool(ctx, tool)
 	}
+}
+
+func (a linuxAdapter) installBun(ctx context.Context) error {
+	prefix, err := a.activeNVMNodePrefix(ctx)
+	if err != nil {
+		return err
+	}
+	// Bun downloads its native runtime from the npm package's postinstall.
+	// Pin the package to the active NVM Node installation so inherited npm
+	// prefix settings cannot put Bun outside the path used for verification.
+	return a.runNVMExecutable(ctx, "npm", "install", "--global", "--prefix", prefix, "--ignore-scripts=false", "--bin-links=true", "bun@latest")
+}
+
+func (a linuxAdapter) activeNVMNodePrefix(ctx context.Context) (string, error) {
+	result, err := a.runNVMExecutableCommand(ctx, "node", "-p", "process.execPath")
+	if err != nil {
+		return "", fmt.Errorf("resolve active NVM Node.js executable: %w", err)
+	}
+	executable := filepath.Clean(strings.TrimSpace(result.Stdout))
+	if !filepath.IsAbs(executable) {
+		return "", fmt.Errorf("resolve active NVM Node.js executable: got %q", strings.TrimSpace(result.Stdout))
+	}
+	return filepath.Dir(filepath.Dir(executable)), nil
 }
 
 func (a linuxAdapter) installNVM(ctx context.Context, version string) error {

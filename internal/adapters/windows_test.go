@@ -587,7 +587,9 @@ func TestWindowsUsesElevationOnlyForSystemChanges(t *testing.T) {
 	npmPath := `C:\Program Files\nodejs\npm.cmd`
 	fixture.LookPaths["npm"] = npmPath
 	elevation := &windowsFixtureElevation{fixture: fixture}
-	adapter := NewWindowsAdapter(fixture, elevation)
+	adapter := NewWindowsAdapter(fixture, elevation, WindowsConfig{
+		ProgramFiles: `C:\Program Files`, NVMSymlink: filepath.Dir(npmPath),
+	})
 
 	if err := adapter.Install(context.Background(), mustTool(t, profile.Codex)); err != nil {
 		t.Fatal(err)
@@ -599,7 +601,7 @@ func TestWindowsUsesElevationOnlyForSystemChanges(t *testing.T) {
 		t.Fatalf("user installers used elevation: %#v", elevation.commands)
 	}
 	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "@openai/codex@latest")
-	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "--ignore-scripts=false", "--bin-links=true", "bun@latest")
+	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "--prefix", filepath.Dir(npmPath), "--ignore-scripts=false", "--bin-links=true", "bun@latest")
 	for _, command := range fixture.Commands {
 		if command.Command == "bash" || command.Command == "sh" || command.Command == "nvm" {
 			t.Fatalf("Windows adapter invoked a Linux command: %#v", command)

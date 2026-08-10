@@ -424,8 +424,7 @@ func (a *WindowsAdapter) installUserTool(ctx context.Context, tool tools.Tool) e
 	case profile.Codex:
 		return a.runResolved(ctx, "npm", "install", "--global", "@openai/codex@latest")
 	case profile.Bun:
-		// Bun downloads its native runtime from the npm package's postinstall.
-		return a.runResolved(ctx, "npm", "install", "--global", "--ignore-scripts=false", "--bin-links=true", "bun@latest")
+		return a.installBun(ctx)
 	default:
 		return a.unsupported(tool)
 	}
@@ -434,12 +433,18 @@ func (a *WindowsAdapter) installUserTool(ctx context.Context, tool tools.Tool) e
 func (a *WindowsAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error {
 	switch tool.ID {
 	case profile.Bun:
-		return a.runResolved(ctx, "npm", "install", "--global", "--ignore-scripts=false", "--bin-links=true", "bun@latest")
+		return a.installBun(ctx)
 	case profile.Node:
 		return a.runNVM(ctx)
 	default:
 		return a.installUserTool(ctx, tool)
 	}
+}
+
+func (a *WindowsAdapter) installBun(ctx context.Context) error {
+	// Keep Bun in the active NVM for Windows Node directory even when npm has
+	// an inherited global prefix, and force the postinstall and command shim.
+	return a.runResolved(ctx, "npm", "install", "--global", "--prefix", a.config.NVMSymlink, "--ignore-scripts=false", "--bin-links=true", "bun@latest")
 }
 
 func (a *WindowsAdapter) run(ctx context.Context, command string, args ...string) error {
