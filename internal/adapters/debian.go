@@ -803,6 +803,11 @@ func expectedMissingComponentExecutable(executable string, result runner.Result)
 	}
 	switch executable {
 	case "node", "npm", "corepack", "pnpm", "yarn", "codex", "bun":
+		// nvm-exec suppresses the diagnostic from `nvm use` and exits 127 when
+		// the requested version (normally lts/*) has not been installed yet.
+		if strings.TrimSpace(result.Stdout) == "" && strings.TrimSpace(result.Stderr) == "" {
+			return true
+		}
 		for _, line := range strings.Split(strings.ToLower(result.Stdout+"\n"+result.Stderr), "\n") {
 			if expectedNVMExecMissingLine(strings.TrimSpace(line), executable) {
 				return true
