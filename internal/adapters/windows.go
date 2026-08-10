@@ -444,7 +444,34 @@ func (a *WindowsAdapter) updateUserTool(ctx context.Context, tool tools.Tool) er
 func (a *WindowsAdapter) installBun(ctx context.Context) error {
 	// Keep Bun in the active NVM for Windows Node directory even when npm has
 	// an inherited global prefix, and force the postinstall and command shim.
-	return a.runResolved(ctx, "npm", "install", "--global", "--prefix", a.config.NVMSymlink, "--ignore-scripts=false", "--bin-links=true", "bun@latest")
+	if err := a.runResolved(ctx, "npm", "install", "--global", "--prefix", a.config.NVMSymlink, "--ignore-scripts=false", "--bin-links=true", "--allow-scripts=bun", "bun@latest"); err != nil {
+		return err
+	}
+	return a.repairBunPostinstall(ctx)
+}
+
+func (a *WindowsAdapter) repairBunPostinstall(ctx context.Context) error {
+	result, err := a.runResolvedCommand(ctx, "bun", "--version")
+	if err == nil {
+		if detect.ParseVersion(result.Stdout, result.Stderr) == "" {
+			return fmt.Errorf("Bun returned no version after npm installation")
+		}
+		return nil
+	}
+	if !expectedBunPostinstallFailure(result) {
+		return fmt.Errorf("verify Bun after npm installation: %w", err)
+	}
+	if err := a.runResolved(ctx, "npm", "explore", "--global", "--prefix", a.config.NVMSymlink, "bun", "--", "node", "install.js"); err != nil {
+		return fmt.Errorf("repair Bun postinstall: %w", err)
+	}
+	result, err = a.runResolvedCommand(ctx, "bun", "--version")
+	if err != nil {
+		return fmt.Errorf("verify Bun after postinstall repair: %w", err)
+	}
+	if detect.ParseVersion(result.Stdout, result.Stderr) == "" {
+		return fmt.Errorf("Bun returned no version after postinstall repair")
+	}
+	return nil
 }
 
 func (a *WindowsAdapter) run(ctx context.Context, command string, args ...string) error {
@@ -453,11 +480,16 @@ func (a *WindowsAdapter) run(ctx context.Context, command string, args ...string
 }
 
 func (a *WindowsAdapter) runResolved(ctx context.Context, name string, args ...string) error {
+	_, err := a.runResolvedCommand(ctx, name, args...)
+	return err
+}
+
+func (a *WindowsAdapter) runResolvedCommand(ctx context.Context, name string, args ...string) (runner.Result, error) {
 	executable, err := a.resolveExecutable(ctx, name)
 	if err != nil {
-		return err
+		return runner.Result{}, err
 	}
-	return a.run(ctx, executable, args...)
+	return a.runner.Run(ctx, executable, args...)
 }
 
 func (a *WindowsAdapter) runNVM(ctx context.Context) error {

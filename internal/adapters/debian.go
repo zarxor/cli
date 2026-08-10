@@ -649,7 +649,37 @@ func (a linuxAdapter) installBun(ctx context.Context) error {
 	// Bun downloads its native runtime from the npm package's postinstall.
 	// Pin the package to the active NVM Node installation so inherited npm
 	// prefix settings cannot put Bun outside the path used for verification.
-	return a.runNVMExecutable(ctx, "npm", "install", "--global", "--prefix", prefix, "--ignore-scripts=false", "--bin-links=true", "bun@latest")
+	if err := a.runNVMExecutable(ctx, "npm", "install", "--global", "--prefix", prefix, "--ignore-scripts=false", "--bin-links=true", "--allow-scripts=bun", "bun@latest"); err != nil {
+		return err
+	}
+	return a.repairBunPostinstall(ctx, prefix)
+}
+
+func (a linuxAdapter) repairBunPostinstall(ctx context.Context, prefix string) error {
+	result, err := a.runNVMExecutableCommand(ctx, "bun", "--version")
+	if err == nil {
+		if detect.ParseVersion(result.Stdout, result.Stderr) == "" {
+			return fmt.Errorf("Bun returned no version after npm installation")
+		}
+		return nil
+	}
+	if !expectedBunPostinstallFailure(result) {
+		return fmt.Errorf("verify Bun after npm installation: %w", err)
+	}
+	// npm's install-script policy can leave Bun's fallback shim in place even
+	// when installation succeeds. npm explore runs the package's own audited
+	// postinstall entry point from the package directory.
+	if err := a.runNVMExecutable(ctx, "npm", "explore", "--global", "--prefix", prefix, "bun", "--", "node", "install.js"); err != nil {
+		return fmt.Errorf("repair Bun postinstall: %w", err)
+	}
+	result, err = a.runNVMExecutableCommand(ctx, "bun", "--version")
+	if err != nil {
+		return fmt.Errorf("verify Bun after postinstall repair: %w", err)
+	}
+	if detect.ParseVersion(result.Stdout, result.Stderr) == "" {
+		return fmt.Errorf("Bun returned no version after postinstall repair")
+	}
+	return nil
 }
 
 func (a linuxAdapter) activeNVMNodePrefix(ctx context.Context) (string, error) {

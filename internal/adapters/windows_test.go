@@ -585,7 +585,10 @@ func TestWindowsNodeInstallAndUpdateUseElevatedNVMSequence(t *testing.T) {
 func TestWindowsUsesElevationOnlyForSystemChanges(t *testing.T) {
 	fixture := runner.NewFixture()
 	npmPath := `C:\Program Files\nodejs\npm.cmd`
+	bunPath := `C:\Program Files\nodejs\bun.exe`
 	fixture.LookPaths["npm"] = npmPath
+	fixture.LookPaths["bun"] = bunPath
+	fixture.Set(bunPath, []string{"--version"}, runner.Result{Stdout: "1.3.14\n"}, nil)
 	elevation := &windowsFixtureElevation{fixture: fixture}
 	adapter := NewWindowsAdapter(fixture, elevation, WindowsConfig{
 		ProgramFiles: `C:\Program Files`, NVMSymlink: filepath.Dir(npmPath),
@@ -601,7 +604,7 @@ func TestWindowsUsesElevationOnlyForSystemChanges(t *testing.T) {
 		t.Fatalf("user installers used elevation: %#v", elevation.commands)
 	}
 	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "@openai/codex@latest")
-	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "--prefix", filepath.Dir(npmPath), "--ignore-scripts=false", "--bin-links=true", "bun@latest")
+	assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", "--prefix", filepath.Dir(npmPath), "--ignore-scripts=false", "--bin-links=true", "--allow-scripts=bun", "bun@latest")
 	for _, command := range fixture.Commands {
 		if command.Command == "bash" || command.Command == "sh" || command.Command == "nvm" {
 			t.Fatalf("Windows adapter invoked a Linux command: %#v", command)
