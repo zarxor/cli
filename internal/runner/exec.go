@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 )
 
 // Exec executes commands directly, without involving a shell.
@@ -30,6 +31,9 @@ func (Exec) Run(ctx context.Context, command string, args ...string) (Result, er
 	result.ExitCode = -1
 	if exitError, ok := err.(*exec.ExitError); ok {
 		result.ExitCode = exitError.ExitCode()
+	}
+	if diagnostic := strings.TrimSpace(result.Stderr); diagnostic != "" {
+		return result, fmt.Errorf("command %q failed with exit code %d: %s: %w", command, result.ExitCode, diagnostic, err)
 	}
 	return result, fmt.Errorf("command %q failed with exit code %d: %w", command, result.ExitCode, err)
 }
