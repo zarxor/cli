@@ -242,7 +242,7 @@ func TestLinuxUserToolInstallsAvoidUnverifiedRemoteScripts(t *testing.T) {
 	setNVMBunVersion(fixture, home)
 	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
 
-	for _, id := range []profile.ToolID{profile.Codex, profile.NVM, profile.Bun} {
+	for _, id := range []profile.ToolID{profile.Claude, profile.Codex, profile.T3Code, profile.NVM, profile.Bun} {
 		if err := adapter.Install(context.Background(), mustTool(t, id)); err != nil {
 			t.Fatal(err)
 		}
@@ -250,6 +250,8 @@ func TestLinuxUserToolInstallsAvoidUnverifiedRemoteScripts(t *testing.T) {
 
 	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
 	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", "@openai/codex@latest")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", "@anthropic-ai/claude-code@latest")
+	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", "t3@latest")
 	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "git", "clone", "--branch", "v0.40.3", "--depth", "1", "https://github.com/nvm-sh/nvm.git", filepath.Join(home, ".nvm"))
 	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "git", "-C", filepath.Join(home, ".nvm"), "checkout", "--detach", "d025499c7f5466d0dc0a324dc98eab72cce8377d")
 	assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", "--prefix", nodePrefix, "--ignore-scripts=false", "--bin-links=true", "--allow-scripts=bun", "bun@latest")
@@ -257,6 +259,34 @@ func TestLinuxUserToolInstallsAvoidUnverifiedRemoteScripts(t *testing.T) {
 		if command.Command == "curl" {
 			t.Fatalf("user tool install downloaded an executable script: %#v", command)
 		}
+	}
+}
+
+func TestLinuxAgentCLIsUseNPMPackagesAndVersionCommands(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	nvmExec := filepath.Join(home, ".nvm", "nvm-exec")
+	fixture.LookPaths[nvmExec] = nvmExec
+	for _, test := range []struct {
+		id          profile.ToolID
+		packageName string
+		executable  string
+	}{
+		{profile.Claude, "@anthropic-ai/claude-code", "claude"},
+		{profile.Codex, "@openai/codex", "codex"},
+		{profile.T3Code, "t3", "t3"},
+	} {
+		t.Run(string(test.id), func(t *testing.T) {
+			fixture.Set("env", nvmExecutableArgs(home, nvmExec, "", test.executable, "--version"), runner.Result{Stdout: "1.0.0\n"}, nil)
+			adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: t.TempDir()})
+			if err := adapter.Install(context.Background(), mustTool(t, test.id)); err != nil {
+				t.Fatal(err)
+			}
+			if err := adapter.Verify(context.Background(), mustTool(t, test.id)); err != nil {
+				t.Fatal(err)
+			}
+			assertHasCommand(t, fixture.Commands, "env", "HOME="+home, "NVM_DIR="+filepath.Join(home, ".nvm"), "NODE_VERSION=lts/*", nvmExec, "npm", "install", "--global", test.packageName+"@latest")
+		})
 	}
 }
 
@@ -687,7 +717,8 @@ func TestLinuxDetectsCandidatesForInstalledUserTools(t *testing.T) {
 
 	packages := map[profile.ToolID]string{
 		profile.NPM: "npm", profile.Corepack: "corepack", profile.PNPM: "pnpm",
-		profile.Yarn: "@yarnpkg/cli-dist", profile.Codex: "@openai/codex", profile.Bun: "bun",
+		profile.Yarn: "@yarnpkg/cli-dist", profile.Claude: "@anthropic-ai/claude-code",
+		profile.Codex: "@openai/codex", profile.T3Code: "t3", profile.Bun: "bun",
 	}
 	for id, packageName := range packages {
 		executable, _ := nvmExecutable(id)
@@ -706,7 +737,8 @@ func TestLinuxDetectsCandidatesForInstalledUserTools(t *testing.T) {
 		{profile.NVM, "v0.40.4"}, {profile.Node, "v24.5.0"},
 		{profile.NPM, "2.0.0"}, {profile.Corepack, "2.0.0"},
 		{profile.PNPM, "2.0.0"}, {profile.Yarn, "2.0.0"},
-		{profile.Codex, "2.0.0"}, {profile.Bun, "2.0.0"},
+		{profile.Claude, "2.0.0"}, {profile.Codex, "2.0.0"},
+		{profile.T3Code, "2.0.0"}, {profile.Bun, "2.0.0"},
 	}
 	for _, test := range cases {
 		t.Run(string(test.id), func(t *testing.T) {

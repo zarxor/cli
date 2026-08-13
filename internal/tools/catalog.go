@@ -25,7 +25,9 @@ var Catalog = []profile.Tool{
 	{ID: profile.Corepack, Name: "Corepack", Dependencies: []profile.ToolID{profile.NPM}},
 	{ID: profile.PNPM, Name: "pnpm", Dependencies: []profile.ToolID{profile.Corepack}},
 	{ID: profile.Yarn, Name: "Yarn", Dependencies: []profile.ToolID{profile.Corepack}},
+	{ID: profile.Claude, Name: "Claude Code", Dependencies: []profile.ToolID{profile.NPM}},
 	{ID: profile.Codex, Name: "Codex", Dependencies: []profile.ToolID{profile.NPM}},
+	{ID: profile.T3Code, Name: "T3 Code", Dependencies: []profile.ToolID{profile.Codex}},
 	{ID: profile.Bun, Name: "Bun", Dependencies: []profile.ToolID{profile.NPM}},
 }
 

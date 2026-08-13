@@ -109,7 +109,8 @@ jb tools install --yes
 Add `--dry-run` to either form to render the plan without changing the machine.
 
 The built-in `development` profile contains the supported development
-toolchain and can still be selected explicitly:
+toolchain, including the Claude Code, Codex, and T3 Code CLIs, and can still be
+selected explicitly:
 
 ```text
 jb tools install --profiles=development
@@ -126,10 +127,11 @@ jb tools install --profiles=<name>[,<name>...]
 
 When neither `--profiles` nor `--only` is supplied, `jb` detects the host shape
 and applies one automatic profile before planning. A regular desktop applies
-`desktop`, which contains the local development toolchain. A headless host
-applies `server`, which contains Git, GitHub CLI, Docker, and Node.js with its
-runtime dependencies. The CLI prints the applied profile and the detection
-reason before checking installed tools:
+`desktop`, which contains the local development toolchain, Claude Code, Codex,
+T3 Code, and Bun. A headless host applies `server`, which contains Git, GitHub
+CLI, Docker, Node.js, Claude Code, and Codex with their runtime dependencies.
+The CLI prints the applied profile and the detection reason before checking
+installed tools:
 
 ```text
 • Applied profiles: desktop (auto-detected desktop: active graphical session detected)
@@ -139,6 +141,11 @@ The explicit `--profiles` flag overrides automatic selection. `--only` skips
 profiles and directly selects the named tools. Tools and dependencies shared by
 multiple profiles are deduplicated by stable tool ID before the plan is shown
 or executed. Built-in profile names are `development`, `desktop`, and `server`.
+
+Claude Code and Codex are installed as the user-level `claude` and `codex` CLI
+commands on both automatic profiles. T3 Code is installed as the user-level
+`t3` CLI on desktop and development profiles; use `--only=t3-code` to add it
+to another explicit plan.
 
 Use `--only` to narrow a profile to the tools you want to manage. Dependencies
 needed by a narrowed tool are still added automatically:
@@ -242,6 +249,37 @@ Use `jb update --dry-run` to download and validate the release without changing
 the installed binary. On Windows, the final replacement completes immediately
 after the command exits so the running executable can be unlocked safely.
 
+## Run the T3 Code backend as a service
+
+On Linux hosts with `systemd`, install the T3 Code backend as a per-user
+background service with:
+
+```text
+jb service install
+```
+
+This invokes T3 Code's supported service installer. It enables the user
+service, enables user lingering so it starts at boot, and starts the backend
+immediately. Node.js and `npx` must already be available; install the runtime
+first when needed:
+
+```text
+jb tools install --only=node
+```
+
+Use the remaining lifecycle commands to inspect or manage the service:
+
+```text
+jb service status
+jb service update
+jb service uninstall
+```
+
+`--base-dir=<path>` selects the T3 Code data directory, and `--dry-run`
+prints the exact command without changing the host. The service command is
+Linux-only because T3 Code's background service currently requires Linux with
+`systemd`.
+
 ## Update installed tools
 
 ```text
@@ -254,8 +292,8 @@ available update. Updateable tools are selected by default before confirmation.
 Updates are conservative: the active executable must match the adapter's
 package provider (WinGet, apt, pacman, or the configured NVM/npm path); ambiguous
 installations are left untouched.
-No local state database is used; neither are telemetry, selection history, or a
-hidden service.
+No local state database, telemetry, or selection history is used by `jb` itself.
+The T3 Code service is opt-in and is managed by T3 Code when explicitly installed.
 
 Use `jb tools update --yes` for non-interactive updates or `jb tools update
 --dry-run` to inspect the plan without changing anything.

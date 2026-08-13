@@ -15,8 +15,10 @@ func TestDevelopmentProfileContainsDevelopmentTools(t *testing.T) {
 			profile.Git,
 			profile.GitHubCLI,
 			profile.Docker,
+			profile.Claude,
 			profile.Codex,
 			profile.Node,
+			profile.T3Code,
 			profile.Bun,
 		},
 	}
@@ -32,8 +34,10 @@ func TestDesktopProfileContainsTheLocalDevelopmentToolchain(t *testing.T) {
 		profile.Git,
 		profile.GitHubCLI,
 		profile.Docker,
+		profile.Claude,
 		profile.Codex,
 		profile.Node,
+		profile.T3Code,
 		profile.Bun,
 	}
 	if got.Name != profile.Desktop || !reflect.DeepEqual(got.ToolIDs, want) {
@@ -41,9 +45,9 @@ func TestDesktopProfileContainsTheLocalDevelopmentToolchain(t *testing.T) {
 	}
 }
 
-func TestServerProfileLeavesDesktopOnlyToolsOut(t *testing.T) {
+func TestServerProfileIncludesAgentCLIsAndLeavesDesktopOnlyToolsOut(t *testing.T) {
 	got := profile.ServerProfile()
-	want := []profile.ToolID{profile.Git, profile.GitHubCLI, profile.Docker, profile.Node}
+	want := []profile.ToolID{profile.Git, profile.GitHubCLI, profile.Docker, profile.Claude, profile.Codex, profile.Node}
 	if got.Name != profile.Server || !reflect.DeepEqual(got.ToolIDs, want) {
 		t.Fatalf("ServerProfile() = %#v, want name %q and tools %v", got, profile.Server, want)
 	}

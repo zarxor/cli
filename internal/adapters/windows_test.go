@@ -173,18 +173,26 @@ func TestWindowsDetectsCandidatesForInstalledUserTools(t *testing.T) {
 		"nvm":  `C:\Users\johan\AppData\Roaming\nvm\nvm.exe`,
 		"node": `C:\Program Files\nodejs\node.exe`, "npm": `C:\Program Files\nodejs\npm.cmd`,
 		"corepack": `C:\Program Files\nodejs\corepack.cmd`, "pnpm": `C:\Program Files\nodejs\pnpm.cmd`,
-		"yarn": `C:\Program Files\nodejs\yarn.cmd`, "codex": `C:\Program Files\nodejs\codex.cmd`,
+		"yarn": `C:\Program Files\nodejs\yarn.cmd`, "claude": `C:\Program Files\nodejs\claude.cmd`,
+		"codex": `C:\Program Files\nodejs\codex.cmd`, "t3": `C:\Program Files\nodejs\t3.cmd`,
 		"bun": `C:\Program Files\nodejs\bun.exe`,
+	}
+	toolIDs := map[string]profile.ToolID{
+		"nvm": profile.NVM, "node": profile.Node, "npm": profile.NPM,
+		"corepack": profile.Corepack, "pnpm": profile.PNPM, "yarn": profile.Yarn,
+		"claude": profile.Claude, "codex": profile.Codex, "t3": profile.T3Code,
+		"bun": profile.Bun,
 	}
 	for executable, path := range paths {
 		fixture.LookPaths[executable] = path
-		fixture.Set(path, windowsSources[mustTool(t, profile.ToolID(executable)).ID].version, runner.Result{Stdout: "1.0.0\n"}, nil)
+		fixture.Set(path, windowsSources[toolIDs[executable]].version, runner.Result{Stdout: "1.0.0\n"}, nil)
 	}
 	fixture.Set(paths["nvm"], []string{"list", "available"}, runner.Result{Stdout: "| CURRENT | LTS | OLD STABLE |\n| 26.1.0 | 24.5.0 | 22.1.0 |\n"}, nil)
 	fixture.Set("winget", []string{"show", "--id", "CoreyButler.NVMforWindows", "--exact"}, runner.Result{Stdout: "Version: 1.2.2\n"}, nil)
 	packages := map[profile.ToolID]string{
 		profile.NPM: "npm", profile.Corepack: "corepack", profile.PNPM: "pnpm",
-		profile.Yarn: "@yarnpkg/cli-dist", profile.Codex: "@openai/codex", profile.Bun: "bun",
+		profile.Yarn: "@yarnpkg/cli-dist", profile.Claude: "@anthropic-ai/claude-code",
+		profile.Codex: "@openai/codex", profile.T3Code: "t3", profile.Bun: "bun",
 	}
 	for id, packageName := range packages {
 		fixture.Set(paths["npm"], []string{"view", packageName, "version"}, runner.Result{Stdout: "2.0.0\n"}, nil)
@@ -198,7 +206,8 @@ func TestWindowsDetectsCandidatesForInstalledUserTools(t *testing.T) {
 		want string
 	}{
 		{profile.NVM, "1.2.2"}, {profile.Node, "24.5.0"}, {profile.NPM, "2.0.0"}, {profile.Corepack, "2.0.0"},
-		{profile.PNPM, "2.0.0"}, {profile.Yarn, "2.0.0"}, {profile.Codex, "2.0.0"}, {profile.Bun, "2.0.0"},
+		{profile.PNPM, "2.0.0"}, {profile.Yarn, "2.0.0"}, {profile.Claude, "2.0.0"},
+		{profile.Codex, "2.0.0"}, {profile.T3Code, "2.0.0"}, {profile.Bun, "2.0.0"},
 	}
 	for _, test := range cases {
 		t.Run(string(test.id), func(t *testing.T) {
@@ -267,7 +276,8 @@ func TestFreshWindowsDevelopmentProfileConvergesProvidersOnceWithoutProcessPATHR
 		"nvm":    filepath.Join(nvmHome, "nvm.exe"), "node": filepath.Join(nvmSymlink, "node.exe"),
 		"npm": filepath.Join(nvmSymlink, "npm.cmd"), "corepack": filepath.Join(nvmSymlink, "corepack.cmd"),
 		"pnpm": filepath.Join(nvmSymlink, "pnpm.cmd"), "yarn": filepath.Join(nvmSymlink, "yarn.cmd"),
-		"codex": filepath.Join(nvmSymlink, "codex.cmd"), "bun": filepath.Join(nvmSymlink, "bun.cmd"),
+		"claude": filepath.Join(nvmSymlink, "claude.cmd"), "codex": filepath.Join(nvmSymlink, "codex.cmd"),
+		"t3": filepath.Join(nvmSymlink, "t3.cmd"), "bun": filepath.Join(nvmSymlink, "bun.cmd"),
 	}
 	fixture := runner.NewFixture()
 	for _, path := range paths {
@@ -308,7 +318,7 @@ func TestFreshWindowsDevelopmentProfileConvergesProvidersOnceWithoutProcessPATHR
 	}
 	for _, command := range fixture.Commands {
 		switch command.Command {
-		case "git", "gh", "docker", "nvm", "node", "npm", "corepack", "pnpm", "yarn", "codex", "bun":
+		case "git", "gh", "docker", "nvm", "node", "npm", "corepack", "pnpm", "yarn", "claude", "codex", "t3", "bun":
 			t.Fatalf("fresh profile relied on stale process PATH: %#v", command)
 		}
 	}
@@ -609,6 +619,35 @@ func TestWindowsUsesElevationOnlyForSystemChanges(t *testing.T) {
 		if command.Command == "bash" || command.Command == "sh" || command.Command == "nvm" {
 			t.Fatalf("Windows adapter invoked a Linux command: %#v", command)
 		}
+	}
+}
+
+func TestWindowsAgentCLIsUseNPMPackagesAndVersionCommands(t *testing.T) {
+	fixture := runner.NewFixture()
+	npmPath := `C:\Program Files\nodejs\npm.cmd`
+	fixture.LookPaths["npm"] = npmPath
+	for _, test := range []struct {
+		id          profile.ToolID
+		packageName string
+		executable  string
+	}{
+		{profile.Claude, "@anthropic-ai/claude-code", "claude"},
+		{profile.Codex, "@openai/codex", "codex"},
+		{profile.T3Code, "t3", "t3"},
+	} {
+		t.Run(string(test.id), func(t *testing.T) {
+			path := filepath.Join(filepath.Dir(npmPath), test.executable+".cmd")
+			fixture.LookPaths[test.executable] = path
+			fixture.Set(path, []string{"--version"}, runner.Result{Stdout: "1.0.0\n"}, nil)
+			adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture}, WindowsConfig{NVMSymlink: filepath.Dir(npmPath)})
+			if err := adapter.Install(context.Background(), mustTool(t, test.id)); err != nil {
+				t.Fatal(err)
+			}
+			if err := adapter.Verify(context.Background(), mustTool(t, test.id)); err != nil {
+				t.Fatal(err)
+			}
+			assertHasCommand(t, fixture.Commands, npmPath, "install", "--global", test.packageName+"@latest")
+		})
 	}
 }
 

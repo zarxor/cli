@@ -35,6 +35,17 @@ func TestExecuteVersionWritesTrailingNewline(t *testing.T) {
 	}
 }
 
+func TestExecuteWithoutArgumentsShowsVersion(t *testing.T) {
+	output := new(bytes.Buffer)
+	err := ExecuteWithIO(context.Background(), nil, output, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Johan Bostrom CLI dev") {
+		t.Fatal(output.String())
+	}
+}
+
 func TestExecuteHelpListsTopLevelCommands(t *testing.T) {
 	output := new(bytes.Buffer)
 	err := ExecuteWithIO(context.Background(), []string{"help"}, output, io.Discard)
@@ -47,6 +58,9 @@ func TestExecuteHelpListsTopLevelCommands(t *testing.T) {
 	if !strings.Contains(output.String(), "skills") {
 		t.Fatal(output.String())
 	}
+	if !strings.Contains(output.String(), "service") {
+		t.Fatal(output.String())
+	}
 	if !strings.Contains(output.String(), "version") {
 		t.Fatal(output.String())
 	}
@@ -54,6 +68,9 @@ func TestExecuteHelpListsTopLevelCommands(t *testing.T) {
 		t.Fatal(output.String())
 	}
 	if !strings.Contains(output.String(), "completion") {
+		t.Fatal(output.String())
+	}
+	if !strings.Contains(output.String(), "Johan Bostrom CLI dev") {
 		t.Fatal(output.String())
 	}
 }

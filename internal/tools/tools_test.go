@@ -26,3 +26,22 @@ func TestResolveToolsRejectsUnknownTool(t *testing.T) {
 		t.Fatal("ResolveTools() error = nil, want an unknown-tool error")
 	}
 }
+
+func TestCatalogIncludesAgentTools(t *testing.T) {
+	tests := []struct {
+		id   profile.ToolID
+		name string
+	}{
+		{profile.Claude, "Claude Code"},
+		{profile.Codex, "Codex"},
+		{profile.T3Code, "T3 Code"},
+	}
+	for _, test := range tests {
+		t.Run(string(test.id), func(t *testing.T) {
+			tool, ok := tools.Lookup(test.id)
+			if !ok || tool.Name != test.name {
+				t.Fatalf("Lookup(%q) = %#v, %v; want %q", test.id, tool, ok, test.name)
+			}
+		})
+	}
+}

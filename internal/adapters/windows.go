@@ -63,7 +63,9 @@ var windowsSources = map[tools.ToolID]windowsToolSource{
 	profile.Corepack:      {executable: "corepack", version: []string{"--version"}},
 	profile.PNPM:          {executable: "pnpm", version: []string{"--version"}},
 	profile.Yarn:          {executable: "yarn", version: []string{"--version"}},
+	profile.Claude:        {executable: "claude", version: []string{"--version"}},
 	profile.Codex:         {executable: "codex", version: []string{"--version"}},
+	profile.T3Code:        {executable: "t3", version: []string{"--version"}},
 	profile.Bun:           {executable: "bun", version: []string{"--version"}},
 }
 
@@ -223,7 +225,8 @@ func (a *WindowsAdapter) userToolCandidate(ctx context.Context, id tools.ToolID)
 	}
 	packageName, ok := map[tools.ToolID]string{
 		profile.NPM: "npm", profile.Corepack: "corepack", profile.PNPM: "pnpm",
-		profile.Yarn: "@yarnpkg/cli-dist", profile.Codex: "@openai/codex", profile.Bun: "bun",
+		profile.Yarn: "@yarnpkg/cli-dist", profile.Claude: "@anthropic-ai/claude-code",
+		profile.Codex: "@openai/codex", profile.T3Code: "t3", profile.Bun: "bun",
 	}[id]
 	if !ok {
 		return "", nil
@@ -247,10 +250,29 @@ func (a *WindowsAdapter) nodeUsesNVM(ctx context.Context) bool {
 	if a.config.NVMSymlink == "" {
 		return false
 	}
-	if !filepath.IsAbs(a.config.NVMSymlink) {
+	normalize := func(value string) string {
+		return strings.TrimRight(strings.ToLower(strings.ReplaceAll(value, `\`, "/")), "/")
+	}
+	if !filepath.IsAbs(a.config.NVMSymlink) && !strings.Contains(a.config.NVMSymlink, `\`) {
 		// Test and embedded environments may not expose ProgramFiles. The
 		// conventional NVM for Windows link directory is still identifiable.
-		return strings.EqualFold(filepath.Base(filepath.Dir(node)), "nodejs")
+		normalizedNode := normalize(node)
+		directory := normalizedNode
+		if separator := strings.LastIndex(directory, "/"); separator >= 0 {
+			directory = directory[:separator]
+		}
+		if separator := strings.LastIndex(directory, "/"); separator >= 0 {
+			directory = directory[separator+1:]
+		}
+		return directory == "nodejs"
+	}
+	// Windows paths can reach this adapter as native paths or as serialized
+	// backslash-separated paths in tests and embedded callers. Compare their
+	// canonical separators before falling back to filepath.Rel so ownership
+	// detection remains stable across host operating systems.
+	normalizedRoot, normalizedNode := normalize(a.config.NVMSymlink), normalize(node)
+	if normalizedNode == normalizedRoot || strings.HasPrefix(normalizedNode, normalizedRoot+"/") {
+		return true
 	}
 	relative, err := filepath.Rel(filepath.Clean(a.config.NVMSymlink), filepath.Clean(node))
 	if err != nil {
@@ -287,7 +309,7 @@ func (a *WindowsAdapter) executableCandidates(name string) []string {
 		return []string{filepath.Join(a.config.NVMHome, "nvm.exe")}
 	case "node":
 		return []string{filepath.Join(a.config.NVMSymlink, "node.exe")}
-	case "npm", "corepack", "pnpm", "yarn", "codex":
+	case "npm", "corepack", "pnpm", "yarn", "claude", "codex", "t3":
 		return []string{filepath.Join(a.config.NVMSymlink, name+".cmd")}
 	case "bun":
 		return []string{filepath.Join(a.config.NVMSymlink, "bun.exe"), filepath.Join(a.config.NVMSymlink, "bun.cmd")}
@@ -421,8 +443,12 @@ func (a *WindowsAdapter) installUserTool(ctx context.Context, tool tools.Tool) e
 		return a.runResolved(ctx, "corepack", "prepare", "pnpm@latest", "--activate")
 	case profile.Yarn:
 		return a.runResolved(ctx, "corepack", "prepare", "yarn@stable", "--activate")
+	case profile.Claude:
+		return a.runResolved(ctx, "npm", "install", "--global", "@anthropic-ai/claude-code@latest")
 	case profile.Codex:
 		return a.runResolved(ctx, "npm", "install", "--global", "@openai/codex@latest")
+	case profile.T3Code:
+		return a.runResolved(ctx, "npm", "install", "--global", "t3@latest")
 	case profile.Bun:
 		return a.installBun(ctx)
 	default:

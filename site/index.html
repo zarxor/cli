@@ -73,7 +73,8 @@
                 <li><span class="manifest-mark" aria-hidden="true"></span><span>Git + GitHub CLI</span><small>version control</small></li>
                 <li><span class="manifest-mark" aria-hidden="true"></span><span>Docker + Compose</span><small>containers</small></li>
                 <li><span class="manifest-mark" aria-hidden="true"></span><span>Node.js + package tools</span><small>runtime</small></li>
-                <li><span class="manifest-mark" aria-hidden="true"></span><span>Bun + Codex</span><small>workflow</small></li>
+                <li><span class="manifest-mark" aria-hidden="true"></span><span>Claude Code + Codex + T3 Code</span><small>agent CLIs</small></li>
+                <li><span class="manifest-mark" aria-hidden="true"></span><span>Bun</span><small>alternate runtime</small></li>
               </ul>
             </div>
             <div class="instrument-command">
@@ -169,6 +170,10 @@
                 <div class="inline-code code-block"><pre><code>jb tools update</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the tools update command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
               </article>
               <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb service install</code><span class="command-tag">autostart</span></div><p>Install the T3 Code backend as a per-user Linux systemd service that starts at boot.</p></div>
+                <div class="inline-code code-block"><pre><code>jb service install</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the T3 Code service install command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
                 <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb skills install</code><span class="command-tag">extend</span></div><p>Choose scope and Codex or Claude destinations first, then select grouped skills from the explicit catalog.</p></div>
                 <div class="inline-code code-block"><pre><code>jb skills install</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the Agent Skills install command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
               </article>
@@ -199,7 +204,7 @@
               <pre><code><span class="preview-muted">$ jb tools install --dry-run</span>
 
 <span class="preview-blue">• Applied profiles: desktop (auto-detected desktop)</span>
-<span class="preview-blue">• Checking installed tools [##########----------] 6/13</span>
+<span class="preview-blue">• Checking installed tools [##########----------] 6/15</span>
 <span class="preview-lime">• Plan ready — no changes made</span>
 
 <span class="preview-muted">Available to install</span>
@@ -228,7 +233,8 @@
               <div class="catalog-row"><span class="catalog-index">02</span><strong>Containers</strong><span>Docker, Buildx, Compose</span></div>
               <div class="catalog-row"><span class="catalog-index">03</span><strong>JavaScript runtime</strong><span>nvm, Node.js LTS</span></div>
               <div class="catalog-row"><span class="catalog-index">04</span><strong>Package tools</strong><span>npm, Corepack, pnpm, Yarn</span></div>
-              <div class="catalog-row"><span class="catalog-index">05</span><strong>Workflow</strong><span>Codex, Bun</span></div>
+              <div class="catalog-row"><span class="catalog-index">05</span><strong>Agent CLIs</strong><span>Claude Code, Codex, T3 Code</span></div>
+              <div class="catalog-row"><span class="catalog-index">06</span><strong>Alternate runtime</strong><span>Bun</span></div>
             </div>
 
             <div class="boundary-list">

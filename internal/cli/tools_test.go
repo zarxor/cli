@@ -172,7 +172,8 @@ func TestToolsInstallAutomaticallyAppliesServerProfile(t *testing.T) {
 	want := []tools.ToolID{
 		profile.Git, profile.GitHubCLI, profile.Docker, profile.DockerBuildx,
 		profile.DockerCompose, profile.NVM, profile.Node, profile.NPM,
-		profile.Corepack, profile.PNPM, profile.Yarn,
+		profile.Corepack, profile.PNPM, profile.Yarn, profile.Claude,
+		profile.Codex,
 	}
 	if got := adapter.detectedIDs(); !sameToolIDs(got, want) {
 		t.Fatalf("detected tool IDs = %v, want automatic server profile %v", got, want)

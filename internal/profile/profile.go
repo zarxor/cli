@@ -24,7 +24,9 @@ const (
 	Docker        ToolID      = "docker"
 	DockerBuildx  ToolID      = "docker-buildx"
 	DockerCompose ToolID      = "docker-compose"
+	Claude        ToolID      = "claude"
 	Codex         ToolID      = "codex"
+	T3Code        ToolID      = "t3-code"
 	NVM           ToolID      = "nvm"
 	Node          ToolID      = "node"
 	NPM           ToolID      = "npm"
@@ -44,8 +46,8 @@ func DevelopmentProfile() Profile {
 	}
 }
 
-// DesktopProfile is the full local development profile. It keeps the
-// existing development toolchain as the automatic desktop default.
+// DesktopProfile is the full local development profile, including the
+// installed agent CLIs and T3 Code.
 func DesktopProfile() Profile {
 	return Profile{
 		Name:    Desktop,
@@ -54,18 +56,18 @@ func DesktopProfile() Profile {
 }
 
 // ServerProfile contains the tools useful for a headless host while leaving
-// desktop-oriented AI and alternate-runtime tools out of the automatic plan.
+// T3 Code and alternate-runtime tools out of the automatic plan.
 func ServerProfile() Profile {
 	return Profile{
 		Name: Server,
 		ToolIDs: []ToolID{
-			Git, GitHubCLI, Docker, Node,
+			Git, GitHubCLI, Docker, Claude, Codex, Node,
 		},
 	}
 }
 
 func developmentToolIDs() []ToolID {
-	return []ToolID{Git, GitHubCLI, Docker, Codex, Node, Bun}
+	return []ToolID{Git, GitHubCLI, Docker, Claude, Codex, Node, T3Code, Bun}
 }
 
 func ResolveProfiles(names []string) ([]Profile, error) {

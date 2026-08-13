@@ -551,10 +551,11 @@ func (a linuxAdapter) userToolCandidate(ctx context.Context, id tools.ToolID) (s
 			}
 		}
 		return "", true, fmt.Errorf("Node.js release metadata contains no LTS version")
-	case profile.NPM, profile.Corepack, profile.PNPM, profile.Yarn, profile.Codex, profile.Bun:
+	case profile.NPM, profile.Corepack, profile.PNPM, profile.Yarn, profile.Claude, profile.Codex, profile.T3Code, profile.Bun:
 		packageName := map[tools.ToolID]string{
 			profile.NPM: "npm", profile.Corepack: "corepack", profile.PNPM: "pnpm",
-			profile.Yarn: "@yarnpkg/cli-dist", profile.Codex: "@openai/codex", profile.Bun: "bun",
+			profile.Yarn: "@yarnpkg/cli-dist", profile.Claude: "@anthropic-ai/claude-code",
+			profile.Codex: "@openai/codex", profile.T3Code: "t3", profile.Bun: "bun",
 		}[id]
 		result, err := a.runNVMExecutableCommand(ctx, "npm", "view", packageName, "version")
 		if err != nil {
@@ -591,6 +592,10 @@ func (a linuxAdapter) versionCommand(id tools.ToolID) (string, []string, error) 
 		return "docker", []string{"compose", "version"}, nil
 	case profile.Codex:
 		return filepath.Join(a.config.Home, ".local", "bin", "codex"), []string{"--version"}, nil
+	case profile.Claude:
+		return filepath.Join(a.config.Home, ".local", "bin", "claude"), []string{"--version"}, nil
+	case profile.T3Code:
+		return filepath.Join(a.config.Home, ".local", "bin", "t3"), []string{"--version"}, nil
 	case profile.Bun:
 		return filepath.Join(a.config.Home, ".bun", "bin", "bun"), []string{"--version"}, nil
 	default:
@@ -600,8 +605,12 @@ func (a linuxAdapter) versionCommand(id tools.ToolID) (string, []string, error) 
 
 func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) error {
 	switch tool.ID {
+	case profile.Claude:
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "@anthropic-ai/claude-code@latest")
 	case profile.Codex:
 		return a.runNVMExecutable(ctx, "npm", "install", "--global", "@openai/codex@latest")
+	case profile.T3Code:
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "t3@latest")
 	case profile.NVM:
 		return a.installNVM(ctx, "v0.40.3")
 	case profile.Node:
@@ -879,7 +888,7 @@ func expectedMissingComponentExecutable(executable string, result runner.Result)
 		return false
 	}
 	switch executable {
-	case "node", "npm", "corepack", "pnpm", "yarn", "codex", "bun":
+	case "node", "npm", "corepack", "pnpm", "yarn", "claude", "codex", "t3", "bun":
 		// nvm-exec exits 127 when the requested version (normally lts/*) has
 		// not been installed yet. Depending on the nvm version, the diagnostic
 		// is either suppressed or written as an N/A/not-yet-installed message.
@@ -949,6 +958,10 @@ func nvmExecutable(id tools.ToolID) (string, bool) {
 		return "yarn", true
 	case profile.Codex:
 		return "codex", true
+	case profile.Claude:
+		return "claude", true
+	case profile.T3Code:
+		return "t3", true
 	case profile.Bun:
 		return "bun", true
 	default:

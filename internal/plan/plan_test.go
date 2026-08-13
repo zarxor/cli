@@ -18,7 +18,8 @@ func TestMergeProfilesExpandsDependenciesInCatalogOrder(t *testing.T) {
 	want := []profile.ToolID{
 		profile.Git, profile.GitHubCLI, profile.Docker, profile.DockerBuildx,
 		profile.DockerCompose, profile.NVM, profile.Node, profile.NPM,
-		profile.Corepack, profile.PNPM, profile.Yarn, profile.Codex, profile.Bun,
+		profile.Corepack, profile.PNPM, profile.Yarn, profile.Claude, profile.Codex,
+		profile.T3Code, profile.Bun,
 	}
 	if gotIDs := toolIDs(got); !reflect.DeepEqual(gotIDs, want) {
 		t.Fatalf("MergeProfiles() IDs = %v, want %v", gotIDs, want)
@@ -60,6 +61,8 @@ func TestMergeProfilesExplicitSelectionExpandsOnlyRuntimeDependencies(t *testing
 		want []profile.ToolID
 	}{
 		{name: "Codex", only: profile.Codex, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM, profile.Codex}},
+		{name: "Claude Code", only: profile.Claude, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM, profile.Claude}},
+		{name: "T3 Code", only: profile.T3Code, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM, profile.Codex, profile.T3Code}},
 		{name: "Bun", only: profile.Bun, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM, profile.Bun}},
 		{name: "npm", only: profile.NPM, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM}},
 		{name: "Docker Buildx", only: profile.DockerBuildx, want: []profile.ToolID{profile.Docker, profile.DockerBuildx}},
@@ -135,7 +138,8 @@ func TestFreshDevelopmentOrderInstallsProvidersBeforeComponentsOnEveryPlatform(t
 		profile.Git, profile.GitHubCLI,
 		profile.Docker, profile.DockerBuildx, profile.DockerCompose,
 		profile.NVM, profile.Node, profile.NPM, profile.Corepack,
-		profile.PNPM, profile.Yarn, profile.Codex, profile.Bun,
+		profile.PNPM, profile.Yarn, profile.Claude, profile.Codex,
+		profile.T3Code, profile.Bun,
 	}
 	for _, host := range []platform.OS{platform.Debian, platform.Arch, platform.Windows} {
 		t.Run(string(host), func(t *testing.T) {

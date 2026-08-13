@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zarxor/cli/internal/render"
+	"github.com/zarxor/cli/internal/version"
 )
 
 type themeFactory func(*cobra.Command) render.Theme
@@ -32,7 +33,7 @@ func newRootCommand(services ...ToolsService) *cobra.Command {
 	if len(services) > 0 {
 		service = services[0]
 	}
-	return newRootCommandWithServices(service, newLiveSkillsService(), func(cmd *cobra.Command) render.Theme {
+	return newRootCommandWithAllServices(service, newLiveSkillsService(), newLiveServiceService(), func(cmd *cobra.Command) render.Theme {
 		return render.AutoTheme(cmd.InOrStdin(), cmd.OutOrStdout(), os.Environ())
 	})
 }
@@ -42,6 +43,10 @@ func newRootCommandWithTheme(service ToolsService, themeFor themeFactory) *cobra
 }
 
 func newRootCommandWithServices(service ToolsService, skillsService SkillsService, themeFor themeFactory) *cobra.Command {
+	return newRootCommandWithAllServices(service, skillsService, newLiveServiceService(), themeFor)
+}
+
+func newRootCommandWithAllServices(service ToolsService, skillsService SkillsService, serviceService ServiceService, themeFor themeFactory) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "jb",
 		Short: "Johan Bostrom CLI",
@@ -49,6 +54,7 @@ func newRootCommandWithServices(service ToolsService, skillsService SkillsServic
 	root.AddCommand(
 		newToolsCommand(service),
 		newSkillsCommand(skillsService),
+		newServiceCommand(serviceService),
 		newUpdateCommand(themeFor),
 		newVersionCommand(themeFor),
 	)
@@ -59,7 +65,9 @@ func newRootCommandWithServices(service ToolsService, skillsService SkillsServic
 		cmd.SetOut(&plain)
 		defaultHelp(cmd, args)
 		cmd.SetOut(output)
-		_ = render.NewRenderer(output, themeFor(cmd)).Help(plain.String())
+		renderer := render.NewRenderer(output, themeFor(cmd))
+		_ = renderer.Version("Johan Bostrom CLI", version.Version)
+		_ = renderer.Help(plain.String())
 	})
 	return root
 }
