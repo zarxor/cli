@@ -37,7 +37,7 @@ detect_target() {
   os=$(uname -s)
   case "$os" in
     Linux) os=linux ;;
-    Darwin) die "macOS is not supported by this release yet." ;;
+    Darwin) os=darwin ;;
     *) die "Unsupported operating system: $os" ;;
   esac
 

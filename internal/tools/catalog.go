@@ -29,6 +29,9 @@ var Catalog = []profile.Tool{
 	{ID: profile.Codex, Name: "Codex", Dependencies: []profile.ToolID{profile.NPM}},
 	{ID: profile.T3Code, Name: "T3 Code", Dependencies: []profile.ToolID{profile.Codex}},
 	{ID: profile.Bun, Name: "Bun", Dependencies: []profile.ToolID{profile.NPM}},
+	{ID: profile.Mise, Name: "mise"},
+	{ID: profile.UV, Name: "uv"},
+	{ID: profile.OpenCode, Name: "OpenCode", Dependencies: []profile.ToolID{profile.NPM}},
 }
 
 var byID = buildLookup(Catalog)

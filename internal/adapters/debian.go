@@ -551,11 +551,12 @@ func (a linuxAdapter) userToolCandidate(ctx context.Context, id tools.ToolID) (s
 			}
 		}
 		return "", true, fmt.Errorf("Node.js release metadata contains no LTS version")
-	case profile.NPM, profile.Corepack, profile.PNPM, profile.Yarn, profile.Claude, profile.Codex, profile.T3Code, profile.Bun:
+	case profile.NPM, profile.Corepack, profile.PNPM, profile.Yarn, profile.Claude, profile.Codex, profile.T3Code, profile.Bun, profile.OpenCode:
 		packageName := map[tools.ToolID]string{
 			profile.NPM: "npm", profile.Corepack: "corepack", profile.PNPM: "pnpm",
 			profile.Yarn: "@yarnpkg/cli-dist", profile.Claude: "@anthropic-ai/claude-code",
 			profile.Codex: "@openai/codex", profile.T3Code: "t3", profile.Bun: "bun",
+			profile.OpenCode: "opencode-ai",
 		}[id]
 		result, err := a.runNVMExecutableCommand(ctx, "npm", "view", packageName, "version")
 		if err != nil {
@@ -596,6 +597,12 @@ func (a linuxAdapter) versionCommand(id tools.ToolID) (string, []string, error) 
 		return filepath.Join(a.config.Home, ".local", "bin", "claude"), []string{"--version"}, nil
 	case profile.T3Code:
 		return filepath.Join(a.config.Home, ".local", "bin", "t3"), []string{"--version"}, nil
+	case profile.Mise:
+		return filepath.Join(a.config.Home, ".local", "bin", "mise"), []string{"--version"}, nil
+	case profile.UV:
+		return filepath.Join(a.config.Home, ".local", "bin", "uv"), []string{"--version"}, nil
+	case profile.OpenCode:
+		return filepath.Join(a.config.Home, ".local", "bin", "opencode"), []string{"--version"}, nil
 	case profile.Bun:
 		return filepath.Join(a.config.Home, ".bun", "bin", "bun"), []string{"--version"}, nil
 	default:
@@ -611,6 +618,12 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 		return a.runNVMExecutable(ctx, "npm", "install", "--global", "@openai/codex@latest")
 	case profile.T3Code:
 		return a.runNVMExecutable(ctx, "npm", "install", "--global", "t3@latest")
+	case profile.Mise:
+		return a.installMise(ctx)
+	case profile.OpenCode:
+		return a.runNVMExecutable(ctx, "npm", "install", "--global", "opencode-ai@latest")
+	case profile.UV:
+		return a.installUV(ctx)
 	case profile.NVM:
 		return a.installNVM(ctx, "v0.40.3")
 	case profile.Node:
@@ -648,6 +661,43 @@ func (a linuxAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error
 	default:
 		return a.installUserTool(ctx, tool)
 	}
+}
+
+func (a linuxAdapter) installUV(ctx context.Context) error {
+	// uv's official installer places a verified standalone binary in the
+	// invoking user's local bin directory and works on Debian and Arch.
+	script, err := a.downloadTemporary(ctx, "jb-uv-install-*", "https://astral.sh/uv/install.sh")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(script)
+	if err := a.runUserCommandWithEnvironment(ctx, []string{
+		"UV_INSTALL_DIR=" + filepath.Join(a.config.Home, ".local", "bin"),
+		"UV_NO_MODIFY_PATH=1",
+	}, "sh", script); err != nil {
+		return err
+	}
+	return a.ensureLocalBinPath(ctx, "uv")
+}
+
+func (a linuxAdapter) installMise(ctx context.Context) error {
+	script, err := a.downloadTemporary(ctx, "jb-mise-install-*", "https://mise.run")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(script)
+	if err := a.runUserCommandWithEnvironment(ctx, []string{
+		"MISE_INSTALL_PATH=" + filepath.Join(a.config.Home, ".local", "bin", "mise"),
+		"MISE_QUIET=1",
+	}, "sh", script); err != nil {
+		return err
+	}
+	return a.ensureLocalBinPath(ctx, "mise")
+}
+
+func (a linuxAdapter) runUserCommandWithEnvironment(ctx context.Context, environment []string, command string, args ...string) error {
+	_, err := a.runUserCommand(ctx, environment, command, args...)
+	return err
 }
 
 func (a linuxAdapter) installBun(ctx context.Context) error {
@@ -888,7 +938,7 @@ func expectedMissingComponentExecutable(executable string, result runner.Result)
 		return false
 	}
 	switch executable {
-	case "node", "npm", "corepack", "pnpm", "yarn", "claude", "codex", "t3", "bun":
+	case "node", "npm", "corepack", "pnpm", "yarn", "claude", "codex", "t3", "bun", "opencode":
 		// nvm-exec exits 127 when the requested version (normally lts/*) has
 		// not been installed yet. Depending on the nvm version, the diagnostic
 		// is either suppressed or written as an N/A/not-yet-installed message.
@@ -964,6 +1014,8 @@ func nvmExecutable(id tools.ToolID) (string, bool) {
 		return "t3", true
 	case profile.Bun:
 		return "bun", true
+	case profile.OpenCode:
+		return "opencode", true
 	default:
 		return "", false
 	}
@@ -1006,6 +1058,10 @@ func (a linuxAdapter) ensureProfileBlock(ctx context.Context, name, content stri
 		return err
 	}
 	return nil
+}
+
+func (a linuxAdapter) ensureLocalBinPath(ctx context.Context, tool string) error {
+	return a.ensureProfileBlock(ctx, tool, `case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac`)
 }
 
 func (a linuxAdapter) ensureProfileBlockAsUser(ctx context.Context, profilePath, name, content string) error {

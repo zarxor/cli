@@ -130,3 +130,49 @@ func TestT3CodeRejectsMissingNodeRuntime(t *testing.T) {
 		t.Fatalf("error = %v, want missing runtime error", err)
 	}
 }
+
+func TestT3CodeCanRestartServiceThroughSystemd(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	fixture.LookPaths["systemctl"] = "/usr/bin/systemctl"
+	fixture.Set("env", []string{"HOME=" + home, "/usr/bin/systemctl", "--user", "restart", t3CodeServiceUnit}, runner.Result{Stdout: "restarted\n"}, nil)
+	manager := NewT3CodeManager(fixture, Config{Platform: "linux", Home: home})
+
+	result, err := manager.Run(context.Background(), Restart, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Output != "restarted" || len(fixture.Commands) != 1 || fixture.Commands[0].Command != "env" {
+		t.Fatalf("result = %#v, commands = %#v", result, fixture.Commands)
+	}
+}
+
+func TestT3CodeLogsUseUserJournalWithBoundedLines(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	fixture.LookPaths["journalctl"] = "/usr/bin/journalctl"
+	fixture.Set("env", []string{"HOME=" + home, "/usr/bin/journalctl", "--user-unit", t3CodeServiceUnit, "--no-pager", "-n", "100", "--follow"}, runner.Result{Stdout: "logs"}, nil)
+	manager := NewT3CodeManager(fixture, Config{Platform: "linux", Home: home})
+
+	if _, err := manager.RunWithOptions(context.Background(), Logs, "", false, RunOptions{Lines: 0, Follow: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture.Commands) != 1 || fixture.Commands[0].Command != "env" {
+		t.Fatalf("commands = %#v", fixture.Commands)
+	}
+}
+
+func TestT3CodeRepairDelegatesToOfficialUpdate(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	fixture.LookPaths["npx"] = "/usr/bin/npx"
+	want := []string{"HOME=" + home, "/usr/bin/npx", "--yes", "t3@latest", "service", "update"}
+	fixture.Set("env", want, runner.Result{}, nil)
+	manager := NewT3CodeManager(fixture, Config{Platform: "linux", Home: home})
+	if _, err := manager.Run(context.Background(), Repair, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture.Commands) != 1 || !reflect.DeepEqual(fixture.Commands[0].Args, want) {
+		t.Fatalf("commands = %#v, want %v", fixture.Commands, want)
+	}
+}

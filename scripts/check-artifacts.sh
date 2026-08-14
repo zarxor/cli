@@ -28,6 +28,7 @@ done
 
 case $(uname -s) in
   Linux) host_os=linux ;;
+  Darwin) host_os=darwin ;;
   MINGW*|MSYS*|CYGWIN*) host_os=windows ;;
   *) host_os=unsupported ;;
 esac
@@ -49,7 +50,7 @@ check_target() {
   computed_hash=$(sha256_file "$asset_path" | awk '{print $1}')
   expected_record="$computed_hash  $asset"
   [[ $checksum_record == "$expected_record" ]] || { printf 'Checksum does not match expected asset: %s\n' "$checksum" >&2; return 1; }
-  if [[ $os == linux ]]; then
+  if [[ $os == linux || $os == darwin ]]; then
     members=$(tar -tzf "$asset_path")
   else
     members=$(unzip -Z1 "$asset_path")
@@ -60,7 +61,7 @@ check_target() {
     output=$(
       extract_root=$(mktemp -d "${TMPDIR:-/tmp}/jb-check.XXXXXXXX")
       trap 'rm -rf "$extract_root"' EXIT
-      if [[ $os == linux ]]; then
+      if [[ $os == linux || $os == darwin ]]; then
         tar -xzf "$asset_path" -C "$extract_root"
       else
         unzip -q "$asset_path" -d "$extract_root"
@@ -74,5 +75,7 @@ check_target() {
 
 check_target linux amd64 jb_linux_amd64.tar.gz jb
 check_target linux arm64 jb_linux_arm64.tar.gz jb
+check_target darwin amd64 jb_darwin_amd64.tar.gz jb
+check_target darwin arm64 jb_darwin_arm64.tar.gz jb
 check_target windows amd64 jb_windows_amd64.zip jb.exe
 check_target windows arm64 jb_windows_arm64.zip jb.exe

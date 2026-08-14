@@ -194,6 +194,15 @@ func targetFor(goos, goarch string) (releaseTarget, error) {
 				format: tarGzipArchive,
 			}, nil
 		}
+	case "darwin":
+		switch goarch {
+		case "amd64", "arm64":
+			return releaseTarget{
+				asset:  "jb_darwin_" + goarch + ".tar.gz",
+				binary: "jb",
+				format: tarGzipArchive,
+			}, nil
+		}
 	case "windows":
 		switch goarch {
 		case "amd64", "arm64":

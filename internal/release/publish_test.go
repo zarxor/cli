@@ -97,7 +97,7 @@ func TestPublishReportsEachCompletedExternalStep(t *testing.T) {
 	for _, text := range []string{
 		"Created local tag v1.0.0",
 		"Pushed tag v1.0.0 to origin",
-		"Created draft release and uploaded 8 assets",
+		"Created draft release and uploaded 12 assets",
 		"Verified draft release assets",
 		"Published release v1.0.0",
 		"Verified published release",

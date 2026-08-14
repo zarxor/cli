@@ -9,6 +9,10 @@ import (
 )
 
 var expectedAssets = []string{
+	"jb_darwin_amd64.tar.gz",
+	"jb_darwin_amd64.tar.gz.sha256",
+	"jb_darwin_arm64.tar.gz",
+	"jb_darwin_arm64.tar.gz.sha256",
 	"jb_linux_amd64.tar.gz",
 	"jb_linux_amd64.tar.gz.sha256",
 	"jb_linux_arm64.tar.gz",

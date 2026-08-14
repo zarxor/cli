@@ -99,6 +99,8 @@ try {
     foreach ($target in @(
         @{ OS = 'linux'; Arch = 'amd64'; Asset = 'jb_linux_amd64.tar.gz'; Executable = 'jb' },
         @{ OS = 'linux'; Arch = 'arm64'; Asset = 'jb_linux_arm64.tar.gz'; Executable = 'jb' },
+        @{ OS = 'darwin'; Arch = 'amd64'; Asset = 'jb_darwin_amd64.tar.gz'; Executable = 'jb' },
+        @{ OS = 'darwin'; Arch = 'arm64'; Asset = 'jb_darwin_arm64.tar.gz'; Executable = 'jb' },
         @{ OS = 'windows'; Arch = 'amd64'; Asset = 'jb_windows_amd64.zip'; Executable = 'jb.exe' },
         @{ OS = 'windows'; Arch = 'arm64'; Asset = 'jb_windows_arm64.zip'; Executable = 'jb.exe' }
     )) {
@@ -126,7 +128,7 @@ try {
             $env:CGO_ENABLED = $oldCgo
         }
 
-        if ($target.OS -eq 'linux') {
+        if ($target.OS -in @('linux', 'darwin')) {
             New-DeterministicTarGz $binaryPath $assetPath
         } else {
             New-DeterministicZip $binaryPath $assetPath

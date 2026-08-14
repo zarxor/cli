@@ -21,7 +21,7 @@ wrap_command() {
 make_fake_bin() {
   rm -rf "${test_root:?}/bin"
   mkdir -p "$test_root/bin"
-  for name in dirname mkdir mktemp rm touch; do
+  for name in cat chmod dirname mkdir mktemp rm touch; do
     wrap_command "$name"
   done
 }
@@ -44,7 +44,7 @@ write_fake go \
   'done' \
   'printf binary >"$output"'
 write_fake gtar 'printf "gtar %s\n" "$*" >>"$JB_TEST_TOOL_LOG"; printf archive'
-write_fake gzip 'printf gzip'
+write_fake gzip 'cat >/dev/null; printf gzip'
 write_fake zip 'printf "zip %s\n" "$*" >>"$JB_TEST_TOOL_LOG"; printf archive >"$3"'
 write_fake shasum 'printf "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  %s\n" "${*: -1}"'
 
@@ -64,6 +64,7 @@ fi
 assert_contains "$build_log" "gtar" "Bash artifact builder uses GNU tar as gtar"
 for asset in \
   jb_linux_amd64.tar.gz jb_linux_arm64.tar.gz \
+  jb_darwin_amd64.tar.gz jb_darwin_arm64.tar.gz \
   jb_windows_amd64.zip jb_windows_arm64.zip; do
   if [[ -f "$build_dir/$asset" && -f "$build_dir/$asset.sha256" ]]; then
     pass "Bash artifact builder emits $asset and its checksum"
@@ -82,13 +83,21 @@ write_fake awk \
   '  printf "%s\n" "$first"' \
   'fi'
 write_fake shasum 'printf "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  %s\n" "${*: -1}"'
-write_fake tar 'printf "tar %s\n" "$*" >>"$JB_TEST_TOOL_LOG"; printf "jb\n"'
+write_fake tar \
+  'printf "tar %s\n" "$*" >>"$JB_TEST_TOOL_LOG"' \
+  'if [[ $1 == -xzf ]]; then' \
+  '  printf "#!/bin/sh\nprintf '\''Johan Bostrom CLI v1.2.3\\n'\''\n" >"$4/jb"' \
+  '  chmod +x "$4/jb"' \
+  'else' \
+  '  printf "jb\\n"' \
+  'fi'
 write_fake unzip 'printf "unzip %s\n" "$*" >>"$JB_TEST_TOOL_LOG"; printf "jb.exe\n"'
 
 check_dir="$test_root/check"
 mkdir -p "$check_dir"
 for asset in \
   jb_linux_amd64.tar.gz jb_linux_arm64.tar.gz \
+  jb_darwin_amd64.tar.gz jb_darwin_arm64.tar.gz \
   jb_windows_amd64.zip jb_windows_arm64.zip; do
   printf archive >"$check_dir/$asset"
   printf 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  %s\n' "$asset" >"$check_dir/$asset.sha256"
@@ -106,8 +115,8 @@ if [[ -f $tool_log ]]; then
 else
   check_log=
 fi
-assert_not_contains "$check_log" "-xzf" "macOS checker does not execute a Linux artifact"
-assert_not_contains "$check_log" "-d " "macOS checker does not execute a Windows artifact"
+assert_contains "$check_log" "-xzf" "macOS checker executes the matching Darwin archive"
+assert_not_contains "$check_log" "unzip -q" "macOS checker does not execute a Windows artifact"
 
 make_fake_bin
 write_fake uname 'printf "Darwin\n"'

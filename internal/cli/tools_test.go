@@ -16,6 +16,8 @@ import (
 	"github.com/zarxor/cli/internal/detect"
 	"github.com/zarxor/cli/internal/host"
 	"github.com/zarxor/cli/internal/install"
+	"github.com/zarxor/cli/internal/plan"
+	"github.com/zarxor/cli/internal/platform"
 	"github.com/zarxor/cli/internal/profile"
 	"github.com/zarxor/cli/internal/render"
 	"github.com/zarxor/cli/internal/tools"
@@ -67,8 +69,12 @@ func TestToolsUpdateWithoutProfilesScansEverySupportedInstalledTool(t *testing.T
 		t.Fatal(err)
 	}
 
-	wantDetected := make([]tools.ToolID, len(tools.Catalog))
-	for i, tool := range tools.Catalog {
+	automatic, err := plan.MergeProfiles([]profile.Profile{profile.DesktopProfile()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDetected := make([]tools.ToolID, len(automatic))
+	for i, tool := range automatic {
 		wantDetected[i] = tool.ID
 	}
 	if got := adapter.detectedIDs(); !sameToolIDs(got, wantDetected) {
@@ -118,6 +124,54 @@ func TestToolsUpdateShowsOnlyToolsWithAvailableUpdates(t *testing.T) {
 	}
 }
 
+func TestToolsListRendersLiveStateWithoutMutation(t *testing.T) {
+	adapter := newFixtureAdapter()
+	adapter.detections[profile.Git] = detect.Detection{Installed: true, Current: "2.49.0", Candidate: "2.50.0"}
+	var output bytes.Buffer
+	service := fixtureService(adapter)
+	if err := service.Run(context.Background(), ToolsRequest{
+		Action: install.List, Only: []tools.ToolID{profile.Git}, Writer: &output,
+		Renderer: render.NewPlainRenderer(&output),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Git") || !strings.Contains(output.String(), "outdated") {
+		t.Fatalf("output = %q, want Git status table", output.String())
+	}
+	if len(adapter.calls) != 0 {
+		t.Fatalf("adapter calls = %v, want read-only inspection", adapter.calls)
+	}
+}
+
+func TestToolsOutdatedJSONFiltersCurrentTools(t *testing.T) {
+	adapter := newFixtureAdapter()
+	adapter.detections[profile.Git] = detect.Detection{Installed: true, Current: "2.49.0", Candidate: "2.50.0"}
+	adapter.detections[profile.Bun] = detect.Detection{Installed: true, Current: "1.2.0", Candidate: "1.2.0"}
+	var output bytes.Buffer
+	if err := fixtureService(adapter).Run(context.Background(), ToolsRequest{
+		Action: install.Outdated, Only: []tools.ToolID{profile.Git, profile.Bun}, JSON: true, Writer: &output,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"id":"git"`) || strings.Contains(output.String(), `"id":"bun"`) {
+		t.Fatalf("JSON output = %q, want only outdated Git", output.String())
+	}
+}
+
+func TestDoctorReportsMissingTools(t *testing.T) {
+	adapter := newFixtureAdapter()
+	var output bytes.Buffer
+	err := fixtureService(adapter).Run(context.Background(), ToolsRequest{
+		Action: install.Doctor, Only: []tools.ToolID{profile.Git}, JSON: true, Writer: &output,
+	})
+	if err == nil || !strings.Contains(err.Error(), "doctor found") {
+		t.Fatalf("error = %v, want doctor failure", err)
+	}
+	if !strings.Contains(output.String(), `"healthy":false`) || !strings.Contains(output.String(), "not installed") {
+		t.Fatalf("JSON output = %q, want missing-tool issue", output.String())
+	}
+}
+
 func TestToolsInstallWithoutScopeReachesService(t *testing.T) {
 	service := &recordingToolsService{}
 	err := executeRoot(t, service, "tools", "install", "--yes", "--dry-run")
@@ -139,8 +193,12 @@ func TestToolsInstallWithoutScopePlansFullCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := make([]tools.ToolID, len(tools.Catalog))
-	for index, tool := range tools.Catalog {
+	automatic, err := plan.MergeProfiles([]profile.Profile{profile.DesktopProfile()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := make([]tools.ToolID, len(automatic))
+	for index, tool := range automatic {
 		want[index] = tool.ID
 	}
 	if got := adapter.detectedIDs(); !sameToolIDs(got, want) {
@@ -148,6 +206,23 @@ func TestToolsInstallWithoutScopePlansFullCatalog(t *testing.T) {
 	}
 	if len(adapter.calls) != 0 {
 		t.Fatalf("dry-run adapter mutations = %v, want none", adapter.calls)
+	}
+}
+
+func TestDetectToolsReturnsOneStatusPerCatalogEntry(t *testing.T) {
+	adapter := newFixtureAdapter()
+	planned := append([]tools.Tool(nil), tools.Catalog...)
+	statuses, err := detectTools(context.Background(), adapter, planned, render.NewPlainRenderer(io.Discard))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != len(planned) {
+		t.Fatalf("statuses = %d, want %d; detected = %v", len(statuses), len(planned), adapter.detectedIDs())
+	}
+	for index, status := range statuses {
+		if status.Tool.ID == "" {
+			t.Fatalf("status %d is empty; detected = %v", index, adapter.detectedIDs())
+		}
 	}
 }
 
@@ -208,12 +283,16 @@ func TestToolsInstallWithoutScopePreselectsFullCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(selection.items) != len(tools.Catalog) {
-		t.Fatalf("selection items = %d, want %d", len(selection.items), len(tools.Catalog))
+	automatic, err := plan.MergeProfiles([]profile.Profile{profile.DesktopProfile()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selection.items) != len(automatic) {
+		t.Fatalf("selection items = %d, want %d", len(selection.items), len(automatic))
 	}
 	for index, item := range selection.items {
-		if item.Tool.ID != tools.Catalog[index].ID || !item.Selected {
-			t.Fatalf("selection item %d = %#v, want preselected %s", index, item, tools.Catalog[index].ID)
+		if item.Tool.ID != automatic[index].ID || !item.Selected {
+			t.Fatalf("selection item %d = %#v, want preselected %s", index, item, automatic[index].ID)
 		}
 	}
 }
@@ -307,8 +386,12 @@ func TestToolsInstallWithoutScopeYesSkipsSelectionAndInstallsFullCatalog(t *test
 	if selection.calls != 0 {
 		t.Fatalf("selection calls = %d, want zero", selection.calls)
 	}
-	want := make([]string, 0, 2*len(tools.Catalog))
-	for _, tool := range tools.Catalog {
+	automatic, err := plan.MergeProfiles([]profile.Profile{profile.DesktopProfile()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := make([]string, 0, 2*len(automatic))
+	for _, tool := range automatic {
 		want = append(want, "install:"+string(tool.ID), "verify:"+string(tool.ID))
 	}
 	if !reflect.DeepEqual(adapter.calls, want) {
@@ -518,6 +601,8 @@ func fixtureService(adapter adapters.Adapter) ToolsService {
 		return adapter, nil
 	}, detectHost: func() (host.Detection, error) {
 		return host.Detection{Role: host.Desktop, Reason: "fixture host"}, nil
+	}, detectPlatform: func() (platform.OS, error) {
+		return platform.Debian, nil
 	}}
 }
 

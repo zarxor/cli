@@ -22,8 +22,13 @@ type Item = render.Item
 type Action string
 
 const (
-	Install Action = "install"
-	Update  Action = "update"
+	Install  Action = "install"
+	Update   Action = "update"
+	List     Action = "list"
+	Outdated Action = "outdated"
+	Repair   Action = "repair"
+	Status   Action = "status"
+	Doctor   Action = "doctor"
 )
 
 type ToolStatus struct {
@@ -64,7 +69,7 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 	if renderer == nil {
 		renderer = render.NewPlainRenderer(writer)
 	}
-	if action != Install && action != Update {
+	if action != Install && action != Update && action != Repair {
 		return failedPlan(statuses, action, fmt.Errorf("unsupported action %q", action))
 	}
 
@@ -73,6 +78,12 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 		if action == Update {
 			if err := renderer.Progress("No tool updates available."); err != nil {
 				return failedPlan(statuses, action, fmt.Errorf("render empty update plan: %w", err))
+			}
+			return Summary{}
+		}
+		if action == Repair {
+			if err := renderer.Progress("No installed tools require repair."); err != nil {
+				return failedPlan(statuses, action, fmt.Errorf("render empty repair plan: %w", err))
 			}
 			return Summary{}
 		}
@@ -163,7 +174,7 @@ func Run(ctx context.Context, action Action, statuses []ToolStatus, adapterSet m
 			}
 			continue
 		}
-		if status.Installed && versionsMatch(status) {
+		if action != Repair && status.Installed && versionsMatch(status) {
 			result := ToolResult{Tool: tool, Action: resultAction, Status: "up-to-date"}
 			summary.Results = append(summary.Results, result)
 			resultsByID[tool.ID] = result
@@ -241,6 +252,15 @@ func eligibleStatuses(action Action, statuses []ToolStatus) []ToolStatus {
 		}
 		return updatable
 	}
+	if action == Repair {
+		repairable := eligible[:0]
+		for _, status := range eligible {
+			if status.Installed {
+				repairable = append(repairable, status)
+			}
+		}
+		return repairable
+	}
 	return eligible
 }
 
@@ -269,6 +289,8 @@ func selectionItems(action Action, statuses []ToolStatus) []Item {
 			label += ")"
 		} else if action == Update {
 			label = fmt.Sprintf("%s (%s -> %s)", status.Tool.Name, versionLabel(status.CurrentVersion), versionLabel(status.CandidateVersion))
+		} else if action == Repair {
+			label = fmt.Sprintf("%s (%s)", status.Tool.Name, versionLabel(status.CurrentVersion))
 		}
 		item := Item{Tool: status.Tool, ID: render.SelectionID(status.Tool.ID), Name: status.Tool.Name, Label: label, Selected: !disabled, Disabled: disabled}
 		if disabled {
@@ -341,6 +363,9 @@ func statusTools(statuses []ToolStatus) []tools.Tool {
 }
 
 func actionFor(requested Action, status ToolStatus) Action {
+	if requested == Repair {
+		return Repair
+	}
 	if requested == Install && status.Installed {
 		return Update
 	}
@@ -357,6 +382,13 @@ func hasUpdateCandidate(status ToolStatus) bool {
 	return strings.TrimSpace(status.CandidateVersion) != ""
 }
 
+// IsOutdated reports whether discovery found a newer candidate version for an
+// installed tool. It is shared by the mutating update flow and read-only
+// inspection commands so both surfaces apply the same version policy.
+func IsOutdated(status ToolStatus) bool {
+	return status.Installed && hasUpdateCandidate(status) && !versionsMatch(status)
+}
+
 var numericVersion = regexp.MustCompile(`[0-9]+(?:\.[0-9]+)+`)
 
 func canonicalVersion(version string) string {
@@ -371,7 +403,7 @@ func canonicalVersion(version string) string {
 }
 
 func execute(ctx context.Context, adapter adapters.Adapter, action Action, tool tools.Tool) error {
-	if action == Install {
+	if action == Install || action == Repair {
 		return adapter.Install(ctx, tool)
 	}
 	return adapter.Update(ctx, tool)
@@ -414,6 +446,9 @@ func failedPlan(statuses []ToolStatus, action Action, err error) Summary {
 func pastTense(action Action) string {
 	if action == Install {
 		return "installed"
+	}
+	if action == Repair {
+		return "repaired"
 	}
 	return "updated"
 }

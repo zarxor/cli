@@ -23,7 +23,7 @@ func TestDevelopmentProfileContainsDevelopmentTools(t *testing.T) {
 		},
 	}
 
-	if !reflect.DeepEqual(got, want) {
+	if got.Name != want.Name || !reflect.DeepEqual(got.ToolIDs, want.ToolIDs) {
 		t.Fatalf("DevelopmentProfile() = %#v, want %#v", got, want)
 	}
 }
@@ -63,9 +63,62 @@ func TestResolveProfilesAcceptsAutomaticProfiles(t *testing.T) {
 	}
 }
 
+func TestResolveProfilesAcceptsComposableProfiles(t *testing.T) {
+	got, err := profile.ResolveProfiles([]string{"agents", "python", "optional"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("profiles = %#v, want three profiles", got)
+	}
+	if !containsAll(got[0].ToolIDs, profile.Claude, profile.Codex, profile.T3Code) {
+		t.Fatalf("agents tools = %v", got[0].ToolIDs)
+	}
+	if !containsAll(got[1].ToolIDs, profile.UV) {
+		t.Fatalf("python tools = %v", got[1].ToolIDs)
+	}
+	if !containsAll(got[2].ToolIDs, profile.Mise, profile.UV, profile.OpenCode) {
+		t.Fatalf("optional tools = %v", got[2].ToolIDs)
+	}
+}
+
+func TestDevelopmentProfileComposesFocusedProfiles(t *testing.T) {
+	got := profile.DevelopmentProfile()
+	if !containsAll(got.ToolIDs, profile.Git, profile.Docker, profile.Claude, profile.T3Code, profile.Node, profile.Bun) {
+		t.Fatalf("development tools = %v", got.ToolIDs)
+	}
+	if containsAny(got.ToolIDs, profile.Mise, profile.UV, profile.OpenCode) {
+		t.Fatalf("development profile unexpectedly includes optional tools: %v", got.ToolIDs)
+	}
+}
+
 func TestResolveProfilesRejectsUnknownProfile(t *testing.T) {
 	_, err := profile.ResolveProfiles([]string{"does-not-exist"})
 	if err == nil {
 		t.Fatal("ResolveProfiles() error = nil, want an unknown-profile error")
 	}
+}
+
+func containsAll(ids []profile.ToolID, wanted ...profile.ToolID) bool {
+	seen := make(map[profile.ToolID]bool, len(ids))
+	for _, id := range ids {
+		seen[id] = true
+	}
+	for _, id := range wanted {
+		if !seen[id] {
+			return false
+		}
+	}
+	return true
+}
+
+func containsAny(ids []profile.ToolID, wanted ...profile.ToolID) bool {
+	for _, id := range ids {
+		for _, candidate := range wanted {
+			if id == candidate {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -67,7 +67,7 @@ build_target() {
       -ldflags "-s -w -X github.com/zarxor/cli/internal/version.Version=$version" \
       -o "$binary_path" ./cmd/jb
   )
-  if [[ $os == linux ]]; then
+  if [[ $os == linux || $os == darwin ]]; then
     (
       cd "$staging_root"
       "$tar_exe" --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - "$executable" | gzip -n >"$asset_path"
@@ -85,5 +85,7 @@ build_target() {
 
 build_target linux amd64 jb_linux_amd64.tar.gz jb
 build_target linux arm64 jb_linux_arm64.tar.gz jb
+build_target darwin amd64 jb_darwin_amd64.tar.gz jb
+build_target darwin arm64 jb_darwin_arm64.tar.gz jb
 build_target windows amd64 jb_windows_amd64.zip jb.exe
 build_target windows arm64 jb_windows_arm64.zip jb.exe

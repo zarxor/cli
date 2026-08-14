@@ -46,6 +46,11 @@ func TestServiceActionsUseT3CodeLifecycle(t *testing.T) {
 		backgroundservice.Update,
 		backgroundservice.Status,
 		backgroundservice.Uninstall,
+		backgroundservice.Start,
+		backgroundservice.Stop,
+		backgroundservice.Restart,
+		backgroundservice.Logs,
+		backgroundservice.Repair,
 	} {
 		t.Run(string(action), func(t *testing.T) {
 			service := &recordingServiceService{}
@@ -79,6 +84,40 @@ func TestServiceRejectsUnknownNameBeforeServiceActivity(t *testing.T) {
 	}
 }
 
+func TestServiceNameResolvesRegisteredServicesAndAliases(t *testing.T) {
+	providers := []serviceProvider{
+		{name: "t3-code", aliases: []string{"t3"}},
+		{name: "example", aliases: []string{"ex"}},
+	}
+	for input, want := range map[string]string{
+		"example": "example",
+		"EX":      "example",
+		"t3":      "t3-code",
+	} {
+		got, err := serviceName([]string{input}, providers)
+		if err != nil {
+			t.Fatalf("serviceName(%q): %v", input, err)
+		}
+		if got != want {
+			t.Fatalf("serviceName(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestServiceServiceDispatchesToRegisteredProvider(t *testing.T) {
+	manager := &recordingBackgroundManager{}
+	service := &serviceService{providers: map[string]serviceProvider{
+		"example": {name: "example", loadManager: func() (backgroundservice.Manager, error) { return manager, nil }},
+	}}
+	_, err := service.Run(context.Background(), ServiceRequest{Name: "example", Action: backgroundservice.Start})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.action != backgroundservice.Start {
+		t.Fatalf("action = %q, want %q", manager.action, backgroundservice.Start)
+	}
+}
+
 func serviceTestRoot(service ServiceService) *cobra.Command {
 	return newRootCommandWithAllServices(
 		serviceTestTools{},
@@ -92,6 +131,15 @@ func serviceTestRoot(service ServiceService) *cobra.Command {
 
 type recordingServiceService struct {
 	requests []ServiceRequest
+}
+
+type recordingBackgroundManager struct {
+	action backgroundservice.Action
+}
+
+func (m *recordingBackgroundManager) RunWithOptions(_ context.Context, action backgroundservice.Action, _ string, _ bool, _ backgroundservice.RunOptions) (backgroundservice.Result, error) {
+	m.action = action
+	return backgroundservice.Result{}, nil
 }
 
 func (s *recordingServiceService) Run(_ context.Context, request ServiceRequest) (backgroundservice.Result, error) {

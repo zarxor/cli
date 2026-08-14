@@ -1,0 +1,35 @@
+name: Validate CLI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install shell test dependencies
+        run: sudo apt-get update && sudo apt-get install --yes curl python3 shellcheck
+
+      - name: Validate Bash entry points
+        run: |
+          bash -n install.sh tests/cli-smoke.sh tests/*.bash
+          shellcheck --severity=warning install.sh tests/cli-smoke.sh tests/*.bash
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Run CLI and publication tests
+        run: bash tests/run.bash

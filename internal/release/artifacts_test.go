@@ -107,6 +107,17 @@ func TestPrepareArtifactsUsesBashOnUnix(t *testing.T) {
 	}
 }
 
+func TestExpectedAssetsIncludeMacOSArchives(t *testing.T) {
+	for _, name := range []string{
+		"jb_darwin_amd64.tar.gz", "jb_darwin_amd64.tar.gz.sha256",
+		"jb_darwin_arm64.tar.gz", "jb_darwin_arm64.tar.gz.sha256",
+	} {
+		if !slices.Contains(expectedAssets, name) {
+			t.Fatalf("expectedAssets missing %s", name)
+		}
+	}
+}
+
 func TestPrepareArtifactsStopsAfterBuilderFailure(t *testing.T) {
 	root := t.TempDir()
 	artifactDir := t.TempDir()

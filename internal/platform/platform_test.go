@@ -32,6 +32,16 @@ func TestDetectFromWindows(t *testing.T) {
 	}
 }
 
+func TestDetectFromMacOS(t *testing.T) {
+	got, err := DetectFrom("darwin", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != Darwin {
+		t.Fatalf("DetectFrom() = %q, want %q", got, Darwin)
+	}
+}
+
 func TestDetectFromDirectDistributionIDs(t *testing.T) {
 	tests := []struct {
 		id   string

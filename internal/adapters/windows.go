@@ -67,6 +67,9 @@ var windowsSources = map[tools.ToolID]windowsToolSource{
 	profile.Codex:         {executable: "codex", version: []string{"--version"}},
 	profile.T3Code:        {executable: "t3", version: []string{"--version"}},
 	profile.Bun:           {executable: "bun", version: []string{"--version"}},
+	profile.Mise:          {executable: "mise", version: []string{"--version"}, packageID: "jdx.mise"},
+	profile.UV:            {executable: "uv", version: []string{"--version"}, packageID: "astral-sh.uv"},
+	profile.OpenCode:      {executable: "opencode", version: []string{"--version"}},
 }
 
 // NewWindowsAdapter creates the native Windows adapter. A nil elevation uses
@@ -227,6 +230,7 @@ func (a *WindowsAdapter) userToolCandidate(ctx context.Context, id tools.ToolID)
 		profile.NPM: "npm", profile.Corepack: "corepack", profile.PNPM: "pnpm",
 		profile.Yarn: "@yarnpkg/cli-dist", profile.Claude: "@anthropic-ai/claude-code",
 		profile.Codex: "@openai/codex", profile.T3Code: "t3", profile.Bun: "bun",
+		profile.OpenCode: "opencode-ai",
 	}[id]
 	if !ok {
 		return "", nil
@@ -309,7 +313,7 @@ func (a *WindowsAdapter) executableCandidates(name string) []string {
 		return []string{filepath.Join(a.config.NVMHome, "nvm.exe")}
 	case "node":
 		return []string{filepath.Join(a.config.NVMSymlink, "node.exe")}
-	case "npm", "corepack", "pnpm", "yarn", "claude", "codex", "t3":
+	case "npm", "corepack", "pnpm", "yarn", "claude", "codex", "t3", "opencode":
 		return []string{filepath.Join(a.config.NVMSymlink, name+".cmd")}
 	case "bun":
 		return []string{filepath.Join(a.config.NVMSymlink, "bun.exe"), filepath.Join(a.config.NVMSymlink, "bun.cmd")}
@@ -449,6 +453,8 @@ func (a *WindowsAdapter) installUserTool(ctx context.Context, tool tools.Tool) e
 		return a.runResolved(ctx, "npm", "install", "--global", "@openai/codex@latest")
 	case profile.T3Code:
 		return a.runResolved(ctx, "npm", "install", "--global", "t3@latest")
+	case profile.OpenCode:
+		return a.runResolved(ctx, "npm", "install", "--global", "opencode-ai@latest")
 	case profile.Bun:
 		return a.installBun(ctx)
 	default:

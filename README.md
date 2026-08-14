@@ -1,11 +1,11 @@
 # Johan Bostrom CLI
 
 Johan Bostrom CLI (`jb`) installs and updates a curated development toolchain
-on Debian/Ubuntu, Arch Linux, and Windows. It is distributed as a standalone
+on Debian/Ubuntu, Arch Linux, macOS, and Windows. It is distributed as a standalone
 binary through GitHub Releases; Go is not required on the target machine.
 
-macOS is planned for the future, but it is not supported by the initial
-release.
+macOS uses Homebrew for system tools and supports both Intel and Apple Silicon
+release binaries.
 
 ## Install `jb`
 
@@ -15,7 +15,7 @@ only then install `jb`. The one-line commands below execute a downloaded
 bootstrap script directly; if you prefer to review the script first, use the
 download-and-review form instead.
 
-### Debian/Ubuntu and Arch Linux
+### Debian/Ubuntu, Arch Linux, and macOS
 
 For a one-line quick install:
 
@@ -98,7 +98,12 @@ instead. Colors are enabled only in a terminal and can be disabled by setting
 the `NO_COLOR` environment variable; the symbols keep every state readable
 without color.
 
-Use `jb tools update` when you want to update an already installed tool.
+Use `jb tools update` when you want to update an already installed tool. Use
+`jb tools list` to inspect live versions, `jb tools outdated` to show only
+available updates, and `jb tools repair` to reinstall installed tools through
+their owning provider. `jb status` summarizes host and tool state; `jb doctor`
+performs the same checks and exits unsuccessfully when a selected tool is
+missing or outdated. Add `--json` to these inspection commands for automation.
 
 For automation, skip the selection and confirmation prompts with:
 
@@ -140,7 +145,15 @@ installed tools:
 The explicit `--profiles` flag overrides automatic selection. `--only` skips
 profiles and directly selects the named tools. Tools and dependencies shared by
 multiple profiles are deduplicated by stable tool ID before the plan is shown
-or executed. Built-in profile names are `development`, `desktop`, and `server`.
+or executed. Built-in profile names include `core`, `agents`, `containers`,
+`javascript`, `python`, `optional`, `development`, `desktop`, and `server`.
+
+The `optional` profile adds mise, uv, and OpenCode without changing the
+automatic desktop or server profiles:
+
+```text
+jb tools install --profiles=optional
+```
 
 Claude Code and Codex are installed as the user-level `claude` and `codex` CLI
 commands on both automatic profiles. T3 Code is installed as the user-level
@@ -273,6 +286,11 @@ Use the remaining lifecycle commands to inspect or manage the service:
 jb service status
 jb service update
 jb service uninstall
+jb service repair
+jb service start
+jb service stop
+jb service restart
+jb service logs
 ```
 
 `--base-dir=<path>` selects the T3 Code data directory, and `--dry-run`
@@ -314,6 +332,14 @@ listed tools:
 jb tools update --only=docker
 ```
 
+The same scopes apply to inspection and repair:
+
+```text
+jb tools list --profiles=optional
+jb tools outdated --only=codex
+jb tools repair --only=docker
+```
+
 ## Other commands
 
 ```text
@@ -330,6 +356,7 @@ jb completion powershell
   privilege boundary.
 - Windows uses per-user package operations where possible and requests
   elevation only for actions that actually require machine-wide access.
+- macOS uses Homebrew for system tools and user-level npm commands for Node CLIs.
 - Root Linux runs privileged actions directly. User-owned tools and profile
   edits converge in place without duplicate shell blocks.
 
@@ -340,7 +367,7 @@ place, and repeated runs remain idempotent.
 
 Documentation and bootstrap installers are published at
 [`cli.johanbostrom.se`](https://cli.johanbostrom.se). Versioned Linux amd64,
-Linux arm64, Windows amd64, and Windows arm64 archives and their SHA-256 files
+Linux arm64, macOS amd64, macOS arm64, Windows amd64, and Windows arm64 archives and their SHA-256 files
 are published through GitHub Releases.
 
 The `site/` directory contains the user-facing Pages source. The Pages workflow
@@ -368,7 +395,7 @@ shows patch, minor, major, custom-version, and cancel choices, then runs the Go
 tests, vetting, build, artifact generation, and artifact verification.
 
 After the checks pass, the command shows the selected version, exact commit,
-and all eight assets. Nothing is changed remotely until the final confirmation.
+and all twelve assets. Nothing is changed remotely until the final confirmation.
 Once confirmed, it creates and pushes the annotated version tag, creates a
 temporary draft with GitHub-generated release notes, uploads and verifies every
 asset, and immediately publishes the release. Successful runs print the public
@@ -410,13 +437,14 @@ that same directory to `-ArtifactDir`/`--artifact-dir` for the checker. The
 release assets are:
 
 - `jb_linux_amd64.tar.gz` and `jb_linux_arm64.tar.gz`, each containing only `jb`
+- `jb_darwin_amd64.tar.gz` and `jb_darwin_arm64.tar.gz`, each containing only `jb`
 - `jb_windows_amd64.zip` and `jb_windows_arm64.zip`, each containing only `jb.exe`
 - a matching `<asset>.sha256` file beside every archive
 
 The checker validates every archive's expected member and SHA-256 checksum. It
 also unpacks and runs `jb version` for the archive matching the current host's
 operating system and CPU architecture; run it on each native platform to cover
-both operating systems and architectures.
+all supported operating systems and architectures.
 
 ## Development
 

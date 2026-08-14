@@ -19,6 +19,8 @@ type ServiceRequest struct {
 	Name    string
 	BaseDir string
 	DryRun  bool
+	Lines   int
+	Follow  bool
 	Writer  io.Writer
 }
 
@@ -29,7 +31,23 @@ type ServiceService interface {
 }
 
 type serviceService struct {
-	loadManager func() (*backgroundservice.T3CodeManager, error)
+	providers map[string]serviceProvider
+}
+
+type serviceProvider struct {
+	name        string
+	aliases     []string
+	loadManager func() (backgroundservice.Manager, error)
+}
+
+func liveServiceProviders() []serviceProvider {
+	return []serviceProvider{
+		{
+			name:        "t3-code",
+			aliases:     []string{"t3", "t3code"},
+			loadManager: loadLiveServiceManager,
+		},
+	}
 }
 
 func newServiceCommand(service ServiceService) *cobra.Command {
@@ -43,6 +61,11 @@ func newServiceCommand(service ServiceService) *cobra.Command {
 		newServiceActionCommand(service, backgroundservice.Update),
 		newServiceActionCommand(service, backgroundservice.Status),
 		newServiceActionCommand(service, backgroundservice.Uninstall),
+		newServiceActionCommand(service, backgroundservice.Start),
+		newServiceActionCommand(service, backgroundservice.Stop),
+		newServiceActionCommand(service, backgroundservice.Restart),
+		newServiceActionCommand(service, backgroundservice.Logs),
+		newServiceActionCommand(service, backgroundservice.Repair),
 	)
 	return command
 }
@@ -50,13 +73,15 @@ func newServiceCommand(service ServiceService) *cobra.Command {
 func newServiceActionCommand(service ServiceService, action backgroundservice.Action) *cobra.Command {
 	var baseDir string
 	var dryRun bool
+	var lines int
+	var follow bool
 
 	command := &cobra.Command{
-		Use:   string(action) + " [t3-code]",
+		Use:   string(action) + " [service]",
 		Short: serviceActionDescription(action),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			name, err := serviceName(args)
+			name, err := serviceName(args, liveServiceProviders())
 			if err != nil {
 				return err
 			}
@@ -65,6 +90,8 @@ func newServiceActionCommand(service ServiceService, action backgroundservice.Ac
 				Name:    name,
 				BaseDir: baseDir,
 				DryRun:  dryRun,
+				Lines:   lines,
+				Follow:  follow,
 				Writer:  command.OutOrStdout(),
 			})
 			if err != nil {
@@ -89,55 +116,86 @@ func newServiceActionCommand(service ServiceService, action backgroundservice.Ac
 			return nil
 		},
 	}
-	command.Flags().StringVar(&baseDir, "base-dir", "", "T3 Code data directory")
+	command.Flags().StringVar(&baseDir, "base-dir", "", "service data directory")
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "show the command without changing the host")
+	if action == backgroundservice.Logs {
+		command.Flags().IntVar(&lines, "lines", 100, "number of recent log lines to show")
+		command.Flags().BoolVar(&follow, "follow", false, "follow service logs")
+	}
 	return command
 }
 
-func serviceName(args []string) (string, error) {
+func serviceName(args []string, providers []serviceProvider) (string, error) {
+	if len(providers) == 0 {
+		return "", fmt.Errorf("no background services are registered")
+	}
 	if len(args) == 0 {
-		return "t3-code", nil
+		return providers[0].name, nil
 	}
 	name := strings.ToLower(strings.TrimSpace(args[0]))
-	switch name {
-	case "t3", "t3code", "t3-code":
-		return "t3-code", nil
-	default:
-		return "", fmt.Errorf("unknown service %q (supported service: t3-code)", args[0])
+	available := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		available = append(available, provider.name)
+		if name == provider.name {
+			return provider.name, nil
+		}
+		for _, alias := range provider.aliases {
+			if name == alias {
+				return provider.name, nil
+			}
+		}
 	}
+	return "", fmt.Errorf("unknown service %q (supported services: %s)", args[0], strings.Join(available, ", "))
 }
 
 func serviceActionDescription(action backgroundservice.Action) string {
 	switch action {
 	case backgroundservice.Install:
-		return "Install T3 Code as an autostarting background service"
+		return "Install an autostarting background service"
 	case backgroundservice.Update:
-		return "Update or repair the T3 Code background service"
+		return "Update a background service"
 	case backgroundservice.Status:
-		return "Show the T3 Code background service status"
+		return "Show a background service status"
 	case backgroundservice.Uninstall:
-		return "Stop and remove the T3 Code background service"
+		return "Stop and remove a background service"
+	case backgroundservice.Start:
+		return "Start a background service"
+	case backgroundservice.Stop:
+		return "Stop a background service"
+	case backgroundservice.Restart:
+		return "Restart a background service"
+	case backgroundservice.Logs:
+		return "Show background service logs"
+	case backgroundservice.Repair:
+		return "Repair a background service"
 	default:
 		return "Manage a background service"
 	}
 }
 
 func (s *serviceService) Run(ctx context.Context, request ServiceRequest) (backgroundservice.Result, error) {
-	if request.Name != "t3-code" {
+	provider, ok := s.providers[request.Name]
+	if !ok {
 		return backgroundservice.Result{}, fmt.Errorf("unsupported service %q", request.Name)
 	}
-	manager, err := s.loadManager()
+	manager, err := provider.loadManager()
 	if err != nil {
 		return backgroundservice.Result{}, err
 	}
-	return manager.Run(ctx, request.Action, request.BaseDir, request.DryRun)
+	return manager.RunWithOptions(ctx, request.Action, request.BaseDir, request.DryRun, backgroundservice.RunOptions{
+		Lines: request.Lines, Follow: request.Follow,
+	})
 }
 
 func newLiveServiceService() ServiceService {
-	return &serviceService{loadManager: loadLiveServiceManager}
+	providers := make(map[string]serviceProvider)
+	for _, provider := range liveServiceProviders() {
+		providers[provider.name] = provider
+	}
+	return &serviceService{providers: providers}
 }
 
-func loadLiveServiceManager() (*backgroundservice.T3CodeManager, error) {
+func loadLiveServiceManager() (backgroundservice.Manager, error) {
 	if runtime.GOOS != "linux" {
 		home, _ := os.UserHomeDir()
 		return backgroundservice.NewT3CodeManager(runner.NewExec(), backgroundservice.Config{

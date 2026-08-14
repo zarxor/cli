@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/zarxor/cli/internal/install"
 	"github.com/zarxor/cli/internal/render"
 	"github.com/zarxor/cli/internal/version"
 )
@@ -53,6 +54,8 @@ func newRootCommandWithAllServices(service ToolsService, skillsService SkillsSer
 	}
 	root.AddCommand(
 		newToolsCommand(service),
+		newRootInspectionCommand(service, install.Status),
+		newRootInspectionCommand(service, install.Doctor),
 		newSkillsCommand(skillsService),
 		newServiceCommand(serviceService),
 		newUpdateCommand(themeFor),

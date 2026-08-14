@@ -42,7 +42,7 @@ func NewPlainRenderer(writer io.Writer) *Renderer {
 func (r *Renderer) Result(row ResultRow) error {
 	var line string
 	switch row.Status {
-	case "installed", "updated", "up-to-date":
+	case "installed", "updated", "repaired", "up-to-date":
 		line = r.theme.Success("✓") + " " + r.theme.Success(row.Status) + " " + r.theme.Important(row.Tool)
 	case "dry-run":
 		line = r.theme.Warning("!") + " " + r.theme.Warning(row.Action) + " " + r.theme.Important(row.Tool) + ": " + r.theme.Warning("dry-run")

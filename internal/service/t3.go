@@ -20,7 +20,19 @@ const (
 	Update    Action = "update"
 	Status    Action = "status"
 	Uninstall Action = "uninstall"
+	Start     Action = "start"
+	Stop      Action = "stop"
+	Restart   Action = "restart"
+	Logs      Action = "logs"
+	Repair    Action = "repair"
 )
+
+const t3CodeServiceUnit = "t3code.service"
+
+type RunOptions struct {
+	Lines  int
+	Follow bool
+}
 
 // Config describes the user account that owns a user-level service. Home and
 // InvokingUser refer to the non-root user even when jb itself was launched via
@@ -41,6 +53,13 @@ type Result struct {
 	DryRun  bool
 }
 
+// Manager is implemented by each background service integration. Keeping the
+// command layer dependent on this interface lets new services be registered
+// without changing lifecycle dispatch.
+type Manager interface {
+	RunWithOptions(context.Context, Action, string, bool, RunOptions) (Result, error)
+}
+
 // T3CodeManager delegates service installation to the official T3 Code CLI.
 // T3 Code owns the systemd unit, pinned runtime, launcher, and state files;
 // jb only supplies the correct user environment and invokes that lifecycle.
@@ -48,6 +67,8 @@ type T3CodeManager struct {
 	runner runner.Runner
 	config Config
 }
+
+var _ Manager = (*T3CodeManager)(nil)
 
 // NewT3CodeManager creates a T3 Code service manager.
 func NewT3CodeManager(commandRunner runner.Runner, config Config) *T3CodeManager {
@@ -61,7 +82,13 @@ func NewT3CodeManager(commandRunner runner.Runner, config Config) *T3CodeManager
 // A dry run still resolves the command and user environment but does not
 // invoke npx or mutate the host.
 func (m *T3CodeManager) Run(ctx context.Context, action Action, baseDir string, dryRun bool) (Result, error) {
-	command, err := m.command(ctx, action, baseDir)
+	return m.RunWithOptions(ctx, action, baseDir, dryRun, RunOptions{})
+}
+
+// RunWithOptions executes a lifecycle operation with optional log controls.
+// It keeps the original Run method as the simple API used by existing callers.
+func (m *T3CodeManager) RunWithOptions(ctx context.Context, action Action, baseDir string, dryRun bool, options RunOptions) (Result, error) {
+	command, err := m.command(ctx, action, baseDir, options)
 	if err != nil {
 		return Result{}, err
 	}
@@ -92,9 +119,11 @@ func (c commandSpec) display() string {
 	return strings.Join(parts, " ")
 }
 
-func (m *T3CodeManager) command(ctx context.Context, action Action, baseDir string) (commandSpec, error) {
+func (m *T3CodeManager) command(ctx context.Context, action Action, baseDir string, options RunOptions) (commandSpec, error) {
 	switch action {
-	case Install, Update, Status, Uninstall:
+	case Start, Stop, Restart, Logs:
+		return m.systemdCommand(ctx, action, options)
+	case Install, Update, Status, Uninstall, Repair:
 	default:
 		return commandSpec{}, fmt.Errorf("unsupported T3 Code service action %q", action)
 	}
@@ -105,7 +134,11 @@ func (m *T3CodeManager) command(ctx context.Context, action Action, baseDir stri
 		return commandSpec{}, fmt.Errorf("resolve the home directory for the T3 Code service user")
 	}
 
-	args := []string{"--yes", "t3@latest", "service", string(action)}
+	providerAction := action
+	if providerAction == Repair {
+		providerAction = Update
+	}
+	args := []string{"--yes", "t3@latest", "service", string(providerAction)}
 	if strings.TrimSpace(baseDir) != "" {
 		args = append(args, "--base-dir", baseDir)
 	}
@@ -125,6 +158,41 @@ func (m *T3CodeManager) command(ctx context.Context, action Action, baseDir stri
 		return commandSpec{}, fmt.Errorf("find npx or nvm for the T3 Code service: %w", err)
 	}
 	return m.asUserCommand(nil, npx, args), nil
+}
+
+func (m *T3CodeManager) systemdCommand(ctx context.Context, action Action, options RunOptions) (commandSpec, error) {
+	if m.config.Platform != "linux" {
+		return commandSpec{}, fmt.Errorf("T3 Code background service requires Linux with systemd; detected %q", m.config.Platform)
+	}
+	if m.config.Home == "" {
+		return commandSpec{}, fmt.Errorf("resolve the home directory for the T3 Code service user")
+	}
+	executable := "systemctl"
+	args := []string{"--user"}
+	if action == Logs {
+		executable = "journalctl"
+		args = []string{"--user-unit", t3CodeServiceUnit, "--no-pager", "-n", strconv.Itoa(normalizeLogLines(options.Lines))}
+		if options.Follow {
+			args = append(args, "--follow")
+		}
+	} else {
+		args = append(args, string(action), t3CodeServiceUnit)
+	}
+	path, err := m.runner.LookPath(ctx, executable)
+	if err != nil {
+		return commandSpec{}, fmt.Errorf("find %s for T3 Code service %s: %w", executable, action, err)
+	}
+	return m.asUserCommand(nil, path, args), nil
+}
+
+func normalizeLogLines(lines int) int {
+	if lines <= 0 {
+		return 100
+	}
+	if lines > 10000 {
+		return 10000
+	}
+	return lines
 }
 
 func (m *T3CodeManager) asUserCommand(environment []string, executable string, args []string) commandSpec {

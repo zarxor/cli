@@ -14,6 +14,7 @@ const (
 	Debian  OS = "debian"
 	Arch    OS = "arch"
 	Windows OS = "windows"
+	Darwin  OS = "darwin"
 )
 
 // Detect identifies the current host from the Go runtime and, on Linux, the
@@ -35,6 +36,9 @@ func Detect() (OS, error) {
 func DetectFrom(goos string, release []byte) (OS, error) {
 	if goos == "windows" {
 		return Windows, nil
+	}
+	if goos == "darwin" {
+		return Darwin, nil
 	}
 	if goos != "linux" {
 		return "", fmt.Errorf("unsupported operating system %q", goos)

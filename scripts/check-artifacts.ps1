@@ -49,7 +49,7 @@ function Test-Checksum([string]$AssetPath, [string]$AssetName) {
     }
 }
 
-$hostOs = if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) { 'windows' } else { 'linux' }
+$hostOs = if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) { 'windows' } elseif ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) { 'darwin' } else { 'linux' }
 $hostArch = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
     'X64' { 'amd64' }
     'Arm64' { 'arm64' }
@@ -59,6 +59,8 @@ $hostArch = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchi
 foreach ($target in @(
     @{ OS = 'linux'; Arch = 'amd64'; Asset = 'jb_linux_amd64.tar.gz'; Executable = 'jb' },
     @{ OS = 'linux'; Arch = 'arm64'; Asset = 'jb_linux_arm64.tar.gz'; Executable = 'jb' },
+    @{ OS = 'darwin'; Arch = 'amd64'; Asset = 'jb_darwin_amd64.tar.gz'; Executable = 'jb' },
+    @{ OS = 'darwin'; Arch = 'arm64'; Asset = 'jb_darwin_arm64.tar.gz'; Executable = 'jb' },
     @{ OS = 'windows'; Arch = 'amd64'; Asset = 'jb_windows_amd64.zip'; Executable = 'jb.exe' },
     @{ OS = 'windows'; Arch = 'arm64'; Asset = 'jb_windows_arm64.zip'; Executable = 'jb.exe' }
 )) {
@@ -67,11 +69,11 @@ foreach ($target in @(
         throw "Missing release asset: $assetPath"
     }
 
-    $members = if ($target.OS -eq 'linux') { Get-TarMembers $assetPath } else { Get-ZipMembers $assetPath }
+    $members = if ($target.OS -in @('linux', 'darwin')) { Get-TarMembers $assetPath } else { Get-ZipMembers $assetPath }
     if (@($members).Count -ne 1 -or @($members)[0] -ne $target.Executable) {
         throw "Unexpected archive members in $($target.Asset): $($members -join ', ')"
     }
-    if ($target.OS -eq 'linux') {
+    if ($target.OS -in @('linux', 'darwin')) {
         $listing = Get-TarListing $assetPath
         if (@($listing).Count -ne 1 -or @($listing)[0] -notmatch '^-rwxr-xr-x\s+') {
             throw "Linux executable is not mode 0755 in $($target.Asset): $($listing -join ', ')"
@@ -83,7 +85,7 @@ foreach ($target in @(
         $extractRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("jb-check-" + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $extractRoot | Out-Null
         try {
-            if ($target.OS -eq 'linux') {
+            if ($target.OS -in @('linux', 'darwin')) {
                 & tar.exe -xzf $assetPath -C $extractRoot
                 if ($LASTEXITCODE -ne 0) { throw "tar failed while extracting $assetPath" }
             } else {

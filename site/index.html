@@ -50,7 +50,7 @@
               <a class="button button-quiet" href="#commands">See the command surface</a>
             </div>
             <div class="hero-meta" aria-label="Supported environments">
-              <span><i class="meta-signal" aria-hidden="true"></i>Linux + Windows</span>
+              <span><i class="meta-signal" aria-hidden="true"></i>Linux + macOS + Windows</span>
               <span>Standalone binary</span>
               <span>GitHub Releases</span>
             </div>
@@ -115,10 +115,11 @@
               <div class="workbench-header"><span>INSTALLER / ENTRY POINT</span><span>REVIEWABLE BY DEFAULT</span></div>
               <div class="platform-tabs" role="tablist" aria-label="Choose an installer platform">
                 <button id="linux-tab" type="button" role="tab" aria-selected="true" aria-controls="linux-panel" data-platform-tab="linux">Linux <small>bash</small></button>
+                <button id="macos-tab" type="button" role="tab" aria-selected="false" aria-controls="macos-panel" data-platform-tab="macos">macOS <small>bash</small></button>
                 <button id="windows-tab" type="button" role="tab" aria-selected="false" aria-controls="windows-panel" data-platform-tab="windows">Windows <small>PowerShell</small></button>
               </div>
               <article class="platform-panel" id="linux-panel" role="tabpanel" data-platform-panel="linux" aria-labelledby="linux-tab">
-                <div class="platform-title-row"><div><h3>Debian, Ubuntu, or Arch</h3><p>User-local by default, without root access.</p></div><span class="platform-code">LINUX / 01</span></div>
+                <div class="platform-title-row"><div><h3>Debian / Ubuntu / Arch</h3><p>User-local by default, without root access.</p></div><span class="platform-code">LINUX / 01</span></div>
                 <p class="install-label">One-line install</p>
                 <div class="code-block">
                   <pre><code>curl -fsSL https://cli.johanbostrom.se/install.sh | bash</code></pre>
@@ -126,6 +127,16 @@
                   <span class="copy-status" data-copy-status aria-live="polite"></span>
                 </div>
                 <p class="install-note">Prefer to review first? <a href="/install.sh">Download install.sh</a>, then run <code>bash install.sh</code>.</p>
+              </article>
+              <article class="platform-panel" id="macos-panel" role="tabpanel" data-platform-panel="macos" aria-labelledby="macos-tab" hidden>
+                <div class="platform-title-row"><div><h3>macOS with Homebrew</h3><p>Supports Intel and Apple Silicon release binaries.</p></div><span class="platform-code">MACOS / 01</span></div>
+                <p class="install-label">One-line install</p>
+                <div class="code-block">
+                  <pre><code>curl -fsSL https://cli.johanbostrom.se/install.sh | bash</code></pre>
+                  <button class="copy-button" type="button" data-copy-button aria-label="Copy the macOS one-line install command">Copy</button>
+                  <span class="copy-status" data-copy-status aria-live="polite"></span>
+                </div>
+                <p class="install-note">Install Homebrew first when using the macOS tool adapter. <a href="/install.sh">Download install.sh</a> to review the bootstrap.</p>
               </article>
               <article class="platform-panel" id="windows-panel" role="tabpanel" data-platform-panel="windows" aria-labelledby="windows-tab">
                 <div class="platform-title-row"><div><h3>Windows PowerShell</h3><p>Installs in the current user's local application data by default.</p></div><span class="platform-code">WINDOWS / 01</span></div>
@@ -165,13 +176,35 @@
                 <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install</code><span class="command-tag">interactive</span></div><p>Detect whether the host is a desktop or server, apply the matching profile, then open the supported catalog with eligible tools preselected.</p></div>
                 <div class="inline-code code-block"><pre><code>jb tools install</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the tools install command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
               </article>
+              <p class="command-note">Interactive lists preselect eligible tools, keep installed tools visible, and use numbered prompts when input is redirected. Use Space to toggle, ↑/↓ to move, and Enter to accept.</p>
               <article class="command-row">
                 <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools update</code><span class="command-tag">refresh</span></div><p>Apply the detected desktop or server profile, discover live versions, and show only installed tools with an available update.</p></div>
                 <div class="inline-code code-block"><pre><code>jb tools update</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the tools update command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
               </article>
               <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb status / jb doctor</code><span class="command-tag">diagnose</span></div><p>Inspect the host and toolchain, with JSON output for automation and a failing doctor result when selected tools need attention.</p></div>
+                <div class="inline-code code-block"><pre><code>jb doctor --json</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the doctor command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install --profiles=optional</code><span class="command-tag">optional</span></div><p>Add mise, uv, and OpenCode on demand without changing the automatic desktop or server setup.</p></div>
+                <div class="inline-code code-block"><pre><code>jb tools install --profiles=optional</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the optional tools profile command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools install --profiles=development --only=bun</code><span class="command-tag">scope</span></div><p>Narrow a profile while retaining Bun's required dependencies.</p></div>
+                <div class="inline-code code-block"><pre><code>jb tools install --profiles=development --only=bun</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the narrowed profile install command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb tools update --profiles=development --only=bun</code><span class="command-tag">scoped update</span></div><p>Narrow profile updates to installed Bun dependencies only.</p></div>
+                <div class="inline-code code-block"><pre><code>jb tools update --profiles=development --only=bun</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the narrowed profile update command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <p class="command-note">Narrow the profile to Bun and its required dependencies; only installed members are updated.</p>
+              <article class="command-row">
                 <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb service install</code><span class="command-tag">autostart</span></div><p>Install the T3 Code backend as a per-user Linux systemd service that starts at boot.</p></div>
                 <div class="inline-code code-block"><pre><code>jb service install</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the T3 Code service install command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
+              </article>
+              <article class="command-row">
+                <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb service restart / logs</code><span class="command-tag">recovery</span></div><p>Restart the T3 Code user service or inspect its recent systemd journal when the backend needs recovery.</p></div>
+                <div class="inline-code code-block"><pre><code>jb service restart</code></pre><button class="copy-button" type="button" data-copy-button aria-label="Copy the T3 Code service restart command">Copy</button><span class="copy-status" data-copy-status aria-live="polite"></span></div>
               </article>
               <article class="command-row">
                 <div class="command-row-main"><div class="command-row-heading"><code class="command-name">jb skills install</code><span class="command-tag">extend</span></div><p>Choose scope and Codex or Claude destinations first, then select grouped skills from the explicit catalog.</p></div>
@@ -212,7 +245,8 @@
   [✓] Docker
 
 <span class="preview-muted">Already installed</span>
-  [-] GitHub CLI</code></pre>
+  [-] GitHub CLI (already installed)
+  [✗] Docker</code></pre>
               <p>Output stays readable in a terminal, in redirected input, and with <code>NO_COLOR</code>.</p>
             </aside>
           </div>
@@ -240,10 +274,10 @@
             <div class="boundary-list">
               <div class="boundary-heading"><span>PROVIDER BOUNDARIES</span><span>PRIVILEGE / DELIBERATE</span></div>
               <dl>
-                <div><dt>Debian / Ubuntu</dt><dd>Supported apt repositories; sudo only for system package operations.</dd></div>
+                <div><dt>Debian/Ubuntu</dt><dd>Supported apt repositories; sudo only for system package operations.</dd></div>
                 <div><dt>Arch Linux</dt><dd>Full pacman transactions with the same limited privilege boundary.</dd></div>
                 <div><dt>Windows</dt><dd>Per-user package operations where possible; elevation only when required.</dd></div>
-                <div><dt>macOS</dt><dd class="boundary-planned">Planned for a future release.</dd></div>
+                <div><dt>macOS</dt><dd>Homebrew-backed tools with user-level Node CLIs and native Intel/Apple Silicon binaries.</dd></div>
               </dl>
             </div>
           </div>

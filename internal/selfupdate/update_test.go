@@ -153,9 +153,12 @@ func TestRunDryRunVerifiesWithoutChangingCLI(t *testing.T) {
 	}
 }
 
-func TestTargetForRejectsUnsupportedReleaseTarget(t *testing.T) {
-	if _, err := targetFor("darwin", "amd64"); err == nil || !strings.Contains(err.Error(), "unsupported update target") {
-		t.Fatalf("targetFor() error = %v, want unsupported target", err)
+func TestTargetForSupportsMacOSReleaseTargets(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64"} {
+		target, err := targetFor("darwin", arch)
+		if err != nil || target.asset != "jb_darwin_"+arch+".tar.gz" || target.binary != "jb" {
+			t.Fatalf("targetFor(darwin/%s) = %#v, %v", arch, target, err)
+		}
 	}
 }
 

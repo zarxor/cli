@@ -262,6 +262,29 @@ func TestLinuxUserToolInstallsAvoidUnverifiedRemoteScripts(t *testing.T) {
 	}
 }
 
+func TestLinuxOptionalToolsUseUserOwnedOfficialInstallers(t *testing.T) {
+	fixture := runner.NewFixture()
+	home := t.TempDir()
+	temp := t.TempDir()
+	adapter := NewDebianAdapter(fixture, fixture, LinuxConfig{Root: true, Home: home, TempDir: temp})
+	fixture.Set("curl", []string{"-fsSL", "https://astral.sh/uv/install.sh", "-o", "fixture-uv"}, runner.Result{}, nil)
+	fixture.Set("curl", []string{"-fsSL", "https://mise.run", "-o", "fixture-mise"}, runner.Result{}, nil)
+
+	if err := adapter.Install(context.Background(), mustTool(t, profile.UV)); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Install(context.Background(), mustTool(t, profile.Mise)); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range fixture.Commands {
+		if command.Command == "sudo" {
+			t.Fatalf("optional user tool used elevation: %#v", command)
+		}
+	}
+	assertHasCommandPrefix(t, fixture.Commands, "env", "HOME="+home, "UV_INSTALL_DIR="+filepath.Join(home, ".local", "bin"), "UV_NO_MODIFY_PATH=1", "sh")
+	assertHasCommandPrefix(t, fixture.Commands, "env", "HOME="+home, "MISE_INSTALL_PATH="+filepath.Join(home, ".local", "bin", "mise"), "MISE_QUIET=1", "sh")
+}
+
 func TestLinuxAgentCLIsUseNPMPackagesAndVersionCommands(t *testing.T) {
 	fixture := runner.NewFixture()
 	home := t.TempDir()
@@ -1281,6 +1304,17 @@ func assertHasCommand(t *testing.T, commands []runner.Command, command string, a
 		}
 	}
 	t.Fatalf("commands %#v do not contain %#v", commands, want)
+}
+
+func assertHasCommandPrefix(t *testing.T, commands []runner.Command, command string, args ...string) {
+	t.Helper()
+	for _, got := range commands {
+		if got.Command != command || len(got.Args) < len(args) || !reflect.DeepEqual(got.Args[:len(args)], args) {
+			continue
+		}
+		return
+	}
+	t.Fatalf("commands %#v do not contain %s with args prefix %#v", commands, command, args)
 }
 
 func assertHasUserProfileHelper(t *testing.T, commands []runner.Command, home, rootTemp, profilePath, blockName string) {

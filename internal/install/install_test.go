@@ -43,6 +43,24 @@ func TestInstallHonorsInteractiveDeselection(t *testing.T) {
 	}
 }
 
+func TestRepairReinstallsInstalledTools(t *testing.T) {
+	adapter := &fixtureAdapter{}
+	statuses := []install.ToolStatus{{Tool: mustTool(t, profile.Git), Installed: true, CurrentVersion: "2.49.0"}}
+
+	summary := install.Run(context.Background(), install.Repair, statuses, fixtureAdapters(adapter), install.Options{
+		Yes: true, Writer: &bytes.Buffer{}, Renderer: render.NewPlainRenderer(&bytes.Buffer{}),
+	})
+	if summary.Failed {
+		t.Fatalf("Run() summary = %#v", summary)
+	}
+	if got, want := adapter.calls, []string{"install:git", "verify:git"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("adapter calls = %v, want %v", got, want)
+	}
+	if len(summary.Results) != 1 || summary.Results[0].Status != "repaired" {
+		t.Fatalf("results = %#v, want repaired result", summary.Results)
+	}
+}
+
 func TestInstallShowsInstalledToolsAsDisabledAndNeverExecutesThem(t *testing.T) {
 	adapter := &fixtureAdapter{}
 	selection := &fixtureSelection{selected: []tools.ToolID{profile.Git, profile.Bun}}
