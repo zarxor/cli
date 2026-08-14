@@ -262,14 +262,23 @@ Use `jb update --dry-run` to download and validate the release without changing
 the installed binary. On Windows, the final replacement completes immediately
 after the command exits so the running executable can be unlocked safely.
 
-## Run the T3 Code backend as a service
+## Manage background services
+
+`jb service` provides a shared lifecycle command for background-service
+integrations. T3 Code is currently the only registered service and is the
+default when no service name is supplied. `jb services` is an alias for the
+same command.
 
 On Linux hosts with `systemd`, install the T3 Code backend as a per-user
-background service with:
+background service with either form:
 
 ```text
 jb service install
+jb service install t3-code
 ```
+
+The aliases `t3` and `t3code` are also accepted. Unknown service names are
+rejected and the error lists the registered services.
 
 This invokes T3 Code's supported service installer. It enables the user
 service, enables user lingering so it starts at boot, and starts the backend
@@ -297,6 +306,11 @@ jb service logs
 prints the exact command without changing the host. The service command is
 Linux-only because T3 Code's background service currently requires Linux with
 `systemd`.
+
+Service dispatch is provider-based: each integration registers its canonical
+name, aliases, and lifecycle manager behind a common interface. This keeps the
+command syntax stable as additional services are added; service-specific
+platform requirements and behavior remain owned by each provider.
 
 ## Update installed tools
 
