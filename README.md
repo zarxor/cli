@@ -148,7 +148,15 @@ multiple profiles are deduplicated by stable tool ID before the plan is shown
 or executed. Built-in profile names include `core`, `agents`, `containers`,
 `javascript`, `python`, `optional`, `development`, `desktop`, and `server`.
 
-The `optional` profile adds mise, uv, and OpenCode without changing the
+The `python` profile installs `uv` and `uvx` together. `uvx` is supplied by
+the same uv provider, so selecting either tool plans both commands:
+
+```text
+jb tools install --profiles=python
+jb tools install --only=uvx
+```
+
+The `optional` profile adds mise, uv, uvx, and OpenCode without changing the
 automatic desktop or server profiles:
 
 ```text

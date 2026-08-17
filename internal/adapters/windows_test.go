@@ -44,6 +44,26 @@ func TestWindowsInstallsSystemToolsThroughWinGet(t *testing.T) {
 	}
 }
 
+func TestWindowsSharesUVWinGetProviderWithUVX(t *testing.T) {
+	fixture := runner.NewFixture()
+	adapter := NewWindowsAdapter(fixture, &windowsFixtureElevation{fixture: fixture})
+
+	if err := adapter.Install(context.Background(), mustTool(t, profile.UV)); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Install(context.Background(), mustTool(t, profile.UVX)); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(fixture.Commands) != 1 {
+		t.Fatalf("commands = %#v, want one shared WinGet install", fixture.Commands)
+	}
+	want := []string{"install", "--id", "astral-sh.uv", "--exact", "--accept-package-agreements", "--accept-source-agreements"}
+	if fixture.Commands[0].Command != "winget" || !reflect.DeepEqual(fixture.Commands[0].Args, want) {
+		t.Fatalf("WinGet command = %#v, want winget %#v", fixture.Commands[0], want)
+	}
+}
+
 func TestWindowsDetectsMissingToolAndDoesNotUpdateIt(t *testing.T) {
 	fixture := runner.NewFixture()
 	fixture.Set("winget", []string{"show", "--id", "Git.Git", "--exact"}, runner.Result{Stdout: "Version: 2.49.0\n"}, nil)

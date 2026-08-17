@@ -69,6 +69,7 @@ var windowsSources = map[tools.ToolID]windowsToolSource{
 	profile.Bun:           {executable: "bun", version: []string{"--version"}},
 	profile.Mise:          {executable: "mise", version: []string{"--version"}, packageID: "jdx.mise"},
 	profile.UV:            {executable: "uv", version: []string{"--version"}, packageID: "astral-sh.uv"},
+	profile.UVX:           {executable: "uvx", version: []string{"--version"}, packageID: "astral-sh.uv"},
 	profile.OpenCode:      {executable: "opencode", version: []string{"--version"}},
 }
 
@@ -327,6 +328,10 @@ func (a *WindowsAdapter) Install(ctx context.Context, tool tools.Tool) error {
 	if !ok {
 		return a.unsupported(tool)
 	}
+	if tool.ID == profile.UVX {
+		// uvx is shipped by the astral-sh.uv package and is installed with uv.
+		return nil
+	}
 	if source.packageID != "" {
 		return a.winGet(ctx, "install", source)
 	}
@@ -337,6 +342,10 @@ func (a *WindowsAdapter) Update(ctx context.Context, tool tools.Tool) error {
 	source, ok := windowsSources[tool.ID]
 	if !ok {
 		return a.unsupported(tool)
+	}
+	if tool.ID == profile.UVX {
+		// uvx is shipped by the astral-sh.uv package and is updated with uv.
+		return nil
 	}
 	detection, err := a.detectInstalled(ctx, tool, source)
 	if err != nil {

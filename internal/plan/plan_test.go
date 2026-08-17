@@ -64,6 +64,8 @@ func TestMergeProfilesExplicitSelectionExpandsOnlyRuntimeDependencies(t *testing
 		{name: "Claude Code", only: profile.Claude, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM, profile.Claude}},
 		{name: "T3 Code", only: profile.T3Code, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM, profile.Codex, profile.T3Code}},
 		{name: "Bun", only: profile.Bun, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM, profile.Bun}},
+		{name: "uv", only: profile.UV, want: []profile.ToolID{profile.UV, profile.UVX}},
+		{name: "uvx", only: profile.UVX, want: []profile.ToolID{profile.UV, profile.UVX}},
 		{name: "npm", only: profile.NPM, want: []profile.ToolID{profile.Git, profile.NVM, profile.Node, profile.NPM}},
 		{name: "Docker Buildx", only: profile.DockerBuildx, want: []profile.ToolID{profile.Docker, profile.DockerBuildx}},
 	}

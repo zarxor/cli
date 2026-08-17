@@ -30,6 +30,7 @@ const (
 	T3Code        ToolID      = "t3-code"
 	Mise          ToolID      = "mise"
 	UV            ToolID      = "uv"
+	UVX           ToolID      = "uvx"
 	OpenCode      ToolID      = "opencode"
 	NVM           ToolID      = "nvm"
 	Node          ToolID      = "node"

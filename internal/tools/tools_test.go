@@ -45,3 +45,15 @@ func TestCatalogIncludesAgentTools(t *testing.T) {
 		})
 	}
 }
+
+func TestCatalogModelsUVXAsAUVComponent(t *testing.T) {
+	uv, ok := tools.Lookup(profile.UV)
+	if !ok || !reflect.DeepEqual(uv.Includes, []profile.ToolID{profile.UVX}) {
+		t.Fatalf("uv catalog entry = %#v, %v; want uvx included", uv, ok)
+	}
+
+	uvx, ok := tools.Lookup(profile.UVX)
+	if !ok || uvx.Name != "uvx" || !reflect.DeepEqual(uvx.Dependencies, []profile.ToolID{profile.UV}) {
+		t.Fatalf("uvx catalog entry = %#v, %v; want uv dependency", uvx, ok)
+	}
+}

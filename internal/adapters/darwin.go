@@ -43,6 +43,7 @@ var darwinSources = map[tools.ToolID]brewSource{
 	profile.Bun:           {formula: "bun", executable: "bun", version: []string{"--version"}},
 	profile.Mise:          {formula: "mise", executable: "mise", version: []string{"--version"}},
 	profile.UV:            {formula: "uv", executable: "uv", version: []string{"--version"}},
+	profile.UVX:           {formula: "uv", executable: "uvx", version: []string{"--version"}},
 }
 
 var darwinNPMCommands = map[tools.ToolID]struct {
@@ -94,6 +95,10 @@ func (a *DarwinAdapter) Install(ctx context.Context, tool tools.Tool) error {
 		if isDarwinDockerComponent(tool.ID) {
 			return nil
 		}
+		if tool.ID == profile.UVX {
+			// Homebrew's uv formula supplies both uv and uvx.
+			return nil
+		}
 		if err := a.ensureBrew(ctx); err != nil {
 			return err
 		}
@@ -112,6 +117,10 @@ func (a *DarwinAdapter) Install(ctx context.Context, tool tools.Tool) error {
 func (a *DarwinAdapter) Update(ctx context.Context, tool tools.Tool) error {
 	if source, ok := darwinSources[tool.ID]; ok {
 		if isDarwinDockerComponent(tool.ID) {
+			return nil
+		}
+		if tool.ID == profile.UVX {
+			// Homebrew's uv formula supplies both uv and uvx.
 			return nil
 		}
 		if err := a.ensureBrew(ctx); err != nil {

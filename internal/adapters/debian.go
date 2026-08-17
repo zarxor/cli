@@ -601,6 +601,8 @@ func (a linuxAdapter) versionCommand(id tools.ToolID) (string, []string, error) 
 		return filepath.Join(a.config.Home, ".local", "bin", "mise"), []string{"--version"}, nil
 	case profile.UV:
 		return filepath.Join(a.config.Home, ".local", "bin", "uv"), []string{"--version"}, nil
+	case profile.UVX:
+		return filepath.Join(a.config.Home, ".local", "bin", "uvx"), []string{"--version"}, nil
 	case profile.OpenCode:
 		return filepath.Join(a.config.Home, ".local", "bin", "opencode"), []string{"--version"}, nil
 	case profile.Bun:
@@ -624,6 +626,10 @@ func (a linuxAdapter) installUserTool(ctx context.Context, tool tools.Tool) erro
 		return a.runNVMExecutable(ctx, "npm", "install", "--global", "opencode-ai@latest")
 	case profile.UV:
 		return a.installUV(ctx)
+	case profile.UVX:
+		// uv's official installer supplies uvx alongside uv. The dependency
+		// planner runs uv first, so there is no second provider transaction.
+		return nil
 	case profile.NVM:
 		return a.installNVM(ctx, "v0.40.3")
 	case profile.Node:
@@ -650,6 +656,9 @@ func (a linuxAdapter) updateUserTool(ctx context.Context, tool tools.Tool) error
 	switch tool.ID {
 	case profile.Bun:
 		return a.installBun(ctx)
+	case profile.UVX:
+		// uvx is installed and updated together with its uv provider.
+		return nil
 	case profile.NVM:
 		version, err := a.latestNVMVersion(ctx)
 		if err != nil {

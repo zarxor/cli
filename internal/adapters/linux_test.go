@@ -273,6 +273,9 @@ func TestLinuxOptionalToolsUseUserOwnedOfficialInstallers(t *testing.T) {
 	if err := adapter.Install(context.Background(), mustTool(t, profile.UV)); err != nil {
 		t.Fatal(err)
 	}
+	if err := adapter.Install(context.Background(), mustTool(t, profile.UVX)); err != nil {
+		t.Fatal(err)
+	}
 	if err := adapter.Install(context.Background(), mustTool(t, profile.Mise)); err != nil {
 		t.Fatal(err)
 	}
@@ -282,6 +285,15 @@ func TestLinuxOptionalToolsUseUserOwnedOfficialInstallers(t *testing.T) {
 		}
 	}
 	assertHasCommandPrefix(t, fixture.Commands, "env", "HOME="+home, "UV_INSTALL_DIR="+filepath.Join(home, ".local", "bin"), "UV_NO_MODIFY_PATH=1", "sh")
+	uvInstallCount := 0
+	for _, command := range fixture.Commands {
+		if command.Command == "curl" && len(command.Args) >= 2 && command.Args[1] == "https://astral.sh/uv/install.sh" {
+			uvInstallCount++
+		}
+	}
+	if uvInstallCount != 1 {
+		t.Fatalf("uv provider transactions = %d, want one for uv and uvx", uvInstallCount)
+	}
 	assertHasCommandPrefix(t, fixture.Commands, "env", "HOME="+home, "MISE_INSTALL_PATH="+filepath.Join(home, ".local", "bin", "mise"), "MISE_QUIET=1", "sh")
 }
 

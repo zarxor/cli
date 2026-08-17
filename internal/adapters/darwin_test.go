@@ -59,3 +59,22 @@ func TestDarwinInstallsOpenCodeThroughOfficialNPMPackage(t *testing.T) {
 		t.Fatalf("commands = %#v", fixture.Commands)
 	}
 }
+
+func TestDarwinSharesUVHomebrewProviderWithUVX(t *testing.T) {
+	fixture := runner.NewFixture()
+	fixture.LookPaths["brew"] = "/opt/homebrew/bin/brew"
+	fixture.Set("brew", []string{"install", "uv"}, runner.Result{}, nil)
+	adapter := NewDarwinAdapter(fixture, fixture)
+
+	if err := adapter.Install(context.Background(), mustTool(t, profile.UV)); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Install(context.Background(), mustTool(t, profile.UVX)); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []runner.Command{{Command: "brew", Args: []string{"install", "uv"}}}
+	if !reflect.DeepEqual(fixture.Commands, want) {
+		t.Fatalf("commands = %#v, want one shared uv provider transaction", fixture.Commands)
+	}
+}
