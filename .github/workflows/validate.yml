@@ -33,3 +33,17 @@ jobs:
 
       - name: Run CLI and publication tests
         run: bash tests/run.bash
+
+  validate-windows-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Test Windows PowerShell installer architecture detection
+        shell: powershell
+        run: ./tests/installer-architecture.ps1
+
+      - name: Test PowerShell installer architecture detection
+        shell: pwsh
+        run: ./tests/installer-architecture.ps1

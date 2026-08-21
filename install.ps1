@@ -45,11 +45,69 @@ function Request-Elevation([string]$Destination) {
     exit $process.ExitCode
 }
 
+function Resolve-WindowsArchitecture {
+    param(
+        [AllowNull()]
+        [string]$RuntimeArchitecture,
+        [AllowNull()]
+        [string]$Wow64Architecture,
+        [AllowNull()]
+        [string]$ProcessArchitecture
+    )
+
+    $rawArchitecture = if (-not [string]::IsNullOrWhiteSpace($RuntimeArchitecture)) {
+        $RuntimeArchitecture
+    } elseif (-not [string]::IsNullOrWhiteSpace($Wow64Architecture)) {
+        $Wow64Architecture
+    } else {
+        $ProcessArchitecture
+    }
+
+    switch -Regex ([string]$rawArchitecture) {
+        '^(?i:arm64)$' { return 'Arm64' }
+        '^(?i:(?:amd64|x64))$' { return 'X64' }
+        default { throw "Unsupported Windows architecture: $rawArchitecture" }
+    }
+}
+
+function Get-WindowsRuntimeArchitecture {
+    try {
+        $runtimeInformation = [type]::GetType(
+            'System.Runtime.InteropServices.RuntimeInformation, System.Runtime.InteropServices.RuntimeInformation',
+            $false
+        )
+        if ($null -eq $runtimeInformation) {
+            $runtimeInformation = [AppDomain]::CurrentDomain.GetAssemblies() |
+                ForEach-Object { $_.GetType('System.Runtime.InteropServices.RuntimeInformation', $false) } |
+                Where-Object { $null -ne $_ } |
+                Select-Object -First 1
+        }
+        if ($null -eq $runtimeInformation) {
+            return $null
+        }
+
+        $bindingFlags = [System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::Static
+        $property = $runtimeInformation.GetProperty('OSArchitecture', $bindingFlags)
+        if ($null -eq $property) {
+            return $null
+        }
+
+        return $property.GetValue($null).ToString()
+    } catch {
+        return $null
+    }
+}
+
 function Get-ReleaseArchitecture {
-    switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
+    $architecture = Resolve-WindowsArchitecture `
+        (Get-WindowsRuntimeArchitecture) `
+        ([Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITEW6432')) `
+        ([Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE'))
+
+    switch ($architecture) {
         'X64' { return 'amd64' }
         'Arm64' { return 'arm64' }
-        default { throw "Unsupported Windows architecture: $_" }
+        default { throw "Unsupported Windows architecture: $architecture" }
     }
 }
 

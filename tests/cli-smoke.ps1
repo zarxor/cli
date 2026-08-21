@@ -21,10 +21,14 @@ $releaseDir = Join-Path $testRoot 'release'
 $payloadDir = Join-Path $testRoot 'payload'
 New-Item -ItemType Directory -Path $releaseDir, $payloadDir | Out-Null
 
-$architecture = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
-    'X64' { 'amd64' }
-    'Arm64' { 'arm64' }
-    default { throw "Unsupported test architecture: $_" }
+$architectureValue = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITEW6432')
+if (-not $architectureValue) {
+    $architectureValue = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE')
+}
+$architecture = switch -Regex ([string]$architectureValue) {
+    '^(?i:(?:amd64|x64))$' { 'amd64' }
+    '^(?i:arm64)$' { 'arm64' }
+    default { throw "Unsupported test architecture: $architectureValue" }
 }
 $assetName = "jb_windows_$architecture.zip"
 $assetPath = Join-Path $releaseDir $assetName

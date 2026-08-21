@@ -49,10 +49,50 @@ function Test-Checksum([string]$AssetPath, [string]$AssetName) {
     }
 }
 
-$hostOs = if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) { 'windows' } elseif ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) { 'darwin' } else { 'linux' }
-$hostArch = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
-    'X64' { 'amd64' }
-    'Arm64' { 'arm64' }
+$hostOs = if ([Environment]::GetEnvironmentVariable('OS') -eq 'Windows_NT') {
+    'windows'
+} else {
+    try {
+        if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) {
+            'darwin'
+        } else {
+            'linux'
+        }
+    } catch {
+        'linux'
+    }
+}
+$runtimeArchitecture = $null
+try {
+    $runtimeInformation = [type]::GetType(
+        'System.Runtime.InteropServices.RuntimeInformation, System.Runtime.InteropServices.RuntimeInformation',
+        $false
+    )
+    if ($null -eq $runtimeInformation) {
+        $runtimeInformation = [AppDomain]::CurrentDomain.GetAssemblies() |
+            ForEach-Object { $_.GetType('System.Runtime.InteropServices.RuntimeInformation', $false) } |
+            Where-Object { $null -ne $_ } |
+            Select-Object -First 1
+    }
+    if ($null -ne $runtimeInformation) {
+        $bindingFlags = [System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::Static
+        $property = $runtimeInformation.GetProperty('OSArchitecture', $bindingFlags)
+        if ($null -ne $property) {
+            $runtimeArchitecture = $property.GetValue($null).ToString()
+        }
+    }
+} catch {
+    $runtimeArchitecture = $null
+}
+if (-not $runtimeArchitecture -and $hostOs -eq 'windows') {
+    $runtimeArchitecture = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITEW6432')
+    if (-not $runtimeArchitecture) {
+        $runtimeArchitecture = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE')
+    }
+}
+$hostArch = switch -Regex ([string]$runtimeArchitecture) {
+    '^(?i:(?:amd64|x64))$' { 'amd64' }
+    '^(?i:arm64)$' { 'arm64' }
     default { 'unsupported' }
 }
 
